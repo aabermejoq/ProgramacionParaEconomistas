@@ -18,3 +18,5 @@ El curso no es exhaustivo, pero sí suficiente para empezar a ser autónomo.
 | 8 | Limpieza de datos con pandas | Python |
 | 9 | Uso de APIs | Python |
 | 10 | Machine Learning aplicado a economía | Python |
+
+Correo : "aabermejo@tec.mx"
