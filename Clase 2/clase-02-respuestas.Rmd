@@ -1,0 +1,180 @@
+---
+title: "Clase 2: Respuestas"
+author: "Introducción a la Programación para Economistas"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = "##")
+```
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+set.seed(55)
+
+n <- 50
+
+pedidos <- data.frame(
+  ciudad    = sample(c("CDMX", "Guadalajara", "Monterrey"), n, replace = TRUE),
+  categoria = sample(c("Playeras", "Pantalones", "Zapatos", "Accesorios"), n, replace = TRUE),
+  metodo_pago = sample(c("Tarjeta", "Transferencia", "Efectivo"), n, replace = TRUE),
+  precio    = round(runif(n, min = 150, max = 1800), 0),
+  unidades  = sample(1:4, n, replace = TRUE)
+)
+```
+
+---
+
+# Parte 1 — `filter()`
+
+**Ejercicio 1.**
+
+```{r}
+pedidos %>% filter(ciudad == "Guadalajara")
+```
+
+**Ejercicio 2.**
+
+```{r}
+pedidos %>% filter(metodo_pago %in% c("Tarjeta", "Transferencia"))
+```
+
+**Ejercicio 3.**
+
+```{r}
+pedidos %>% filter(precio > 1000 & unidades > 2)
+```
+
+---
+
+# Parte 2 — `select()`
+
+**Ejercicio 4.**
+
+```{r}
+pedidos %>% select(ciudad, categoria, precio)
+```
+
+**Ejercicio 5.**
+
+```{r}
+pedidos %>% select(-metodo_pago)
+```
+
+---
+
+# Parte 3 — Encadenar `filter` y `select`
+
+**Ejercicio 6.**
+
+```{r}
+pedidos %>%
+  filter(ciudad == "Monterrey") %>%
+  filter(precio == max(precio)) %>%
+  select(categoria, precio)
+```
+
+**Ejercicio 7.**
+
+```{r}
+pedidos %>%
+  filter(metodo_pago == "Efectivo") %>%
+  filter(precio == min(precio)) %>%
+  select(ciudad, categoria, precio)
+```
+
+---
+
+# Parte 4 — `mutate()`
+
+**Ejercicio 8.**
+
+```{r}
+pedidos <- pedidos %>%
+  mutate(ingreso = precio * unidades)
+
+head(pedidos, 6)
+```
+
+**Ejercicio 9.**
+
+```{r}
+pedidos <- pedidos %>%
+  mutate(pedido_grande = ingreso > 2000)
+
+head(pedidos, 6)
+```
+
+---
+
+# Parte 5 — `group_by()` + `summarise()`
+
+**Ejercicio 10.**
+
+```{r}
+pedidos %>%
+  group_by(ciudad) %>%
+  summarise(
+    ingreso_total   = sum(ingreso),
+    ingreso_promedio = mean(ingreso),
+    n_pedidos       = n()
+  )
+```
+
+**Ejercicio 11.**
+
+```{r}
+pedidos %>%
+  group_by(categoria) %>%
+  summarise(unidades_totales = sum(unidades))
+```
+
+**Ejercicio 12.**
+
+```{r}
+resumen_pago <- pedidos %>%
+  group_by(ciudad, metodo_pago) %>%
+  summarise(ingreso_total = sum(ingreso), .groups = "drop")
+
+resumen_pago
+```
+
+---
+
+# Parte 6 — Pivotar
+
+**Ejercicio 13.**
+
+```{r}
+resumen_pago %>%
+  pivot_wider(
+    names_from = metodo_pago,
+    values_from = ingreso_total,
+    values_fill = 0
+  )
+```
+
+---
+
+# Parte 7 — Todo junto
+
+**Ejercicio 14.**
+
+```{r}
+pedidos %>%
+  group_by(ciudad, categoria) %>%
+  summarise(ingreso = sum(ingreso), .groups = "drop") %>%
+  group_by(ciudad) %>%
+  filter(ingreso == max(ingreso)) %>%
+  select(ciudad, categoria, ingreso)
+```
+
