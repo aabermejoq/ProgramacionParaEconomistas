@@ -1,0 +1,482 @@
+---
+title: "Clase 4: Visualización de datos en R"
+subtitle: "Taquerías de México — DENUE, INEGI"
+author: "Introducción a la Programación para Economistas"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = "##",
+                      fig.width = 10, fig.height = 5)
+```
+
+```{r}
+library(tidyverse)
+library(patchwork)
+```
+
+---
+
+# Los datos: DENUE
+
+El **DENUE** (Directorio Estadístico Nacional de Unidades Económicas) es el registro oficial del INEGI de todos los establecimientos económicos en México. En particular, el archivo que utilizaremos contiene todos los establecimientos que tienen la palabra "taqueria" en su nombre. 
+
+```{r}
+denue_raw <- read_csv("datos/taquerias.csv",
+                      locale = locale(encoding = "latin1"))
+```
+
+Los **encodings** son sistemas para convertir texto en números. El problema: existen varios estándares, y si usas el equivocado los acentos y ñ salen como símbolos raros.
+
+Los más comunes que van a encontrar:
+
+- **UTF-8** — el estándar moderno, lo que usa R por defecto
+- **Latin1** — muy común en archivos del gobierno mexicano (como el DENUE)
+- **Windows-1252** — archivos generados en Windows, parecido a Latin1
+
+Si ves `Ã©` o `Ã±` donde debería haber acentos, el archivo está en Latin1 y R lo está leyendo como UTF-8.
+
+## ¿Cómo detectarlo?
+
+```{r}
+library(readr)
+guess_encoding("datos/taquerias.csv")
+```
+
+
+# Limpieza rápida
+
+Seleccionamos solo las columnas útiles y les damos nombres manejables:
+
+```{r}
+taquerias <- denue_raw %>%
+  select(
+    id          = ID,
+    nombre      = `Nombre de la Unidad Económica`,
+    actividad   = `Nombre de clase de la actividad`,
+    estrato     = `Descripcion estrato personal ocupado`,
+    colonia     = `Nombre de asentamiento humano`,
+    municipio   = Municipio,
+    entidad     = `Entidad federativa`,
+    tipo        = `Tipo de establecimiento`,
+    lat         = Latitud,
+    lon         = Longitud,
+    fecha_inc   = `Fecha de incorporación al DENUE`
+  ) %>%
+  mutate(
+    año_inc = str_sub(fecha_inc, 1, 4) %>% as.integer(),
+    estrato = fct_relevel(estrato,
+      "0 a 5 personas", "6 a 10 personas", "11 a 30 personas",
+      "31 a 50 personas", "51 a 100 personas", "101 a 250 personas"))
+
+```
+
+Con esto ya podemos trabajar. Ahora sí, a graficar.
+
+---
+
+# ¿Para qué sirve una gráfica?
+
+Antes de escribir una sola línea de `ggplot2`, hay que preguntarse: **¿cuál es el mensaje?**
+
+Una gráfica es un **mapeo de datos a elementos visuales**. Cada punto, barra, color o forma debe corresponder a algo en los datos. Si hay color decorativo, sobra. Si hay un eje que no representa nada, engaña.
+
+Tres preguntas antes de empezar:
+
+1. **¿Cuál es el mensaje?** Escríbelo en una oración. Si no puedes, la gráfica no está lista.
+2. **¿Podría ser una tabla o una oración?** "Hay 10,984 taquerías en el dataset" no necesita gráfica.
+3. **¿Puede el lector señalar cada elemento y decir qué significa?**
+
+---
+
+# Gramática de gráficos
+
+`ggplot2` estructura toda gráfica en tres piezas:
+
+- **Datos**: el objeto que contiene la información
+- **Mapeos** (`aes()`): qué variable va a qué elemento visual (x, y, color, tamaño, forma)
+- **Geometría** (`geom_*`): cómo se dibujan esos mapeos
+
+```{r}
+# ── Manipulación de datos ─────────────────────────────────────────────────────
+
+top10_municipios <- taquerias %>%
+  count(municipio, sort = TRUE) %>%   # cuenta filas por municipio → crea columna "n"
+  slice_head(n = 10)                  # se queda con los 10 más grandes
+
+top10_municipios   # siempre vale la pena ver qué tienes antes de graficar
+
+# ── Gráfica ───────────────────────────────────────────────────────────────────
+
+ggplot(data    = top10_municipios,       # los datos que acabamos de preparar
+       mapping = aes(x = municipio,      # eje horizontal: nombre del municipio
+                     y = n)) +           # eje vertical: el conteo que calculamos arriba
+  geom_col()                             # geom_col = barras, donde la altura es y
+```
+
+Funciona, pero es difícil de leer. Lo vamos a mejorar capa por capa.
+
+---
+
+# Construir una gráfica capa por capa
+
+Mensaje: **¿Cuales demarcaciones de la CDMX estan en el top 10 de taquerias a nivel nacional?**
+
+## Paso 1: ordenar
+
+```{r}
+# ── Manipulación de datos ─────────────────────────────────────────────────────
+
+top10_municipios <- taquerias %>%
+  count(municipio, sort = TRUE) %>%       # cuenta taquerías por municipio → columna "n"
+  slice_head(n = 10) %>%                  # top 10
+  mutate(
+    municipio = fct_reorder(municipio, n) # convierte municipio a factor ordenado por n
+  )                                       # sin esto las barras salen en orden alfabético
+
+top10_municipios
+
+# ── Gráfica ───────────────────────────────────────────────────────────────────
+
+ggplot(data    = top10_municipios,
+       mapping = aes(x = n,           # eje horizontal: el conteo
+                     y = municipio)) + # eje vertical: el municipio (ya ordenado)
+  geom_col()                    # barras horizontales — más fácil de leer nombres largos
+```
+
+`fct_reorder` ordena las barras de menor a mayor según `n`. Sin esto, aparecen en orden alfabético, que no dice nada al lector.
+
+
+## Paso 2: agregar un mapeo que aporte información
+
+Para responder la pregunta necesitamos saber qué municipios son de la CDMX.
+Esa información ya está en los datos — en la columna `entidad` — pero no la
+tenemos en `top10_municipios` porque solo contamos por municipio.
+
+La solución es unir dos tablas usando `left_join`.
+
+### ¿Qué es un join?
+
+Un join une dos tablas usando una columna en común como llave. Primero veamos
+las dos tablas que vamos a unir:
+
+```{r}
+# tabla izquierda — el top 10 que ya teníamos
+head(top10_municipios,2)
+```
+
+```{r}
+# tabla derecha — cada municipio con su entidad
+# distinct() elimina duplicados: sin esto tendríamos una fila por taquería
+municipio_entidad <- taquerias %>%
+  distinct(municipio, entidad)
+
+head(municipio_entidad,5)
+```
+
+`left_join` pega la tabla derecha sobre la izquierda usando `municipio` como
+llave. **La tabla de la izquierda manda**: se conservan todas sus filas y se
+les agregan las columnas de la derecha.
+
+```{r}
+# resultado del join: top10 + columna entidad
+top10_municipios %>%
+  left_join(municipio_entidad, by = "municipio")
+```
+
+Ahora que tenemos `entidad`, podemos crear la columna `es_cdmx` y usarla como mapeo de color:
+
+```{r}
+top10_municipios <- taquerias %>%
+  count(municipio, sort = TRUE) %>%
+  slice_head(n = 10) %>%
+  left_join(municipio_entidad, by = "municipio") %>%
+  mutate(
+    municipio = fct_reorder(municipio, n),
+    es_cdmx   = entidad == "CIUDAD DE MÉXICO"
+  )
+
+# fill es un tercer mapeo: cada barra se colorea según es_cdmx
+ggplot(top10_municipios, aes(x = n, y = municipio, fill = es_cdmx)) +
+  geom_col()
+```
+
+```{r}
+# verificamos el problema — Benito Juárez aparece en más de un estado
+municipio_entidad %>%
+  filter(municipio == "Benito Juárez")
+```
+
+```{r}
+# contamos por municipio Y entidad desde el inicio — así no hay duplicados
+top10_municipios <- taquerias %>%
+  count(municipio, entidad, sort = TRUE) %>%   # una fila por combinación única
+  slice_head(n = 10) %>%
+  mutate(
+    municipio = fct_reorder(municipio, n),
+    es_cdmx   = entidad == "CIUDAD DE MÉXICO"
+  )
+
+
+ggplot(top10_municipios, aes(x = n, y = municipio, fill = es_cdmx)) +
+  geom_col()
+```
+
+## Paso 3: diseño (siempre al final)
+
+```{r}
+
+# ── Gráfica ───────────────────────────────────────────────────────────────────
+
+ggplot(top10_municipios, aes(x = n, y = municipio, fill = es_cdmx)) +
+  geom_col(alpha = 0.85) + #Transparencia de las barras 
+
+  # por defecto ggplot colorea TRUE/FALSE con colores automáticos
+  # scale_fill_manual nos permite elegir los colores y cambiar las etiquetas
+  # de la leyenda — "TRUE" y "FALSE" no le dicen nada al lector
+  scale_fill_manual(
+    values = c("TRUE"  = "steelblue",
+               "FALSE" = "green4"),
+    labels = c("TRUE"  = "CDMX",
+               "FALSE" = "Otro estado")
+  ) +
+
+  # labs() controla todos los textos de la gráfica
+  # y = NULL elimina la etiqueta del eje y — el nombre del municipio se explica solo
+  # fill = NULL elimina el título de la leyenda — los colores ya son claros
+  labs(
+    title   = "Top 10 municipios con más taquerías registradas",
+    x       = "Número de taquerías",
+    y       = NULL,
+    fill    = NULL,
+    caption = "Fuente: DENUE, INEGI (Julio 2026)"
+  ) +
+
+  # theme_minimal() quita el fondo gris y la mayoría de elementos decorativos
+  # es el tema más limpio para análisis académico
+  # alternativas: theme_classic(), theme_bw(), theme_light()
+  theme_minimal() +
+
+  # por defecto la leyenda va abajo — arriba ocupa menos espacio vertical
+  # otras opciones: "bottom", "left", "right", o c(x, y) para posición exacta
+  theme(legend.position = "top")
+```
+
+El diseño va **después** de que el contenido funciona. Primero que la información sea correcta, luego que se vea bien.
+
+---
+
+# Transformaciones
+
+Los datos crudos a veces engañan. Antes de graficar hay que preguntarse: **¿estoy midiendo lo que quiero medir, o estoy midiendo otra cosa?**
+
+En este caso: un municipio puede tener muchas taquerías simplemente porque es grande, no porque sea particularmente "taquero". Si graficamos el conteo crudo, el ranking lo van a dominar siempre las ciudades más pobladas — no las más densas en taquerías.
+
+La solución es **normalizar**: dividir el conteo entre alguna medida del tamaño del municipio. Idealmente usaríamos población, pero eso no está en el DENUE. Lo que sí tenemos es el número de colonias distintas por municipio, que funciona como proxy razonable del tamaño urbano.
+
+Dos transformaciones que hacemos:
+
+- `n_distinct(colonia)` — cuenta cuántas colonias distintas tiene cada municipio
+- `n_taquerias / n_colonias` — el ratio: taquerías por unidad de tamaño urbano
+
+Y un filtro importante: municipios con menos de 50 taquerías quedan fuera. Un municipio con 2 taquerías en 1 colonia tendría un ratio de 2 — más alto que Iztapalapa — pero no es un resultado relevante, es un artefacto del tamaño de muestra.
+
+```{r}
+# ── Datos crudos: taquerías por municipio ─────────────────────────────────────
+
+taquerias_por_municipio <- taquerias %>%
+  count(municipio, entidad, sort = TRUE) %>%
+  slice_head(n = 10) %>%
+  mutate(
+    # str_to_title: primera letra mayúscula, resto minúscula
+    # "CIUDAD DE MÉXICO" → "Ciudad De México"
+    # \n es un salto de línea — para que la etiqueta quepa mejor en el eje y
+    etiqueta = paste0(municipio, "\n(", str_to_title(entidad), ")")
+  )
+
+p_crudo <- taquerias_por_municipio %>%
+  mutate(etiqueta = fct_reorder(etiqueta, n)) %>%   # ordena por n, no alfabéticamente
+  ggplot(aes(x = n, y = etiqueta)) +
+  geom_col(fill = "darkslategray3", alpha = 0.9) +
+  labs(title   = "Taquerías por municipio",
+       subtitle = "Gana el municipio más grande, no el más taquero",
+       x = "Número de taquerías", y = NULL) +
+  theme_minimal()
+
+# ── Transformación: taquerías por colonia ─────────────────────────────────────
+
+colonias_por_municipio <- taquerias %>%
+  group_by(municipio, entidad) %>%
+  summarise(
+    n_taquerias = n(),
+    n_colonias  = n_distinct(colonia),
+    .groups     = "drop"
+  ) %>%
+  # filtramos municipios con pocas taquerías — distorsionan el ratio
+  # un municipio con 2 taquerías en 1 colonia tiene ratio 2, pero no es relevante
+  filter(n_taquerias >= 50) %>%
+  mutate(
+    taquerias_por_colonia = n_taquerias / n_colonias,
+    # str_to_title también aquí — faltaba en la versión anterior
+    etiqueta = paste0(municipio, "\n(", str_to_title(entidad), ")")
+  ) %>%
+  arrange(desc(taquerias_por_colonia)) %>%
+  slice_head(n = 10)
+
+
+p_normalizado <- colonias_por_municipio %>%
+  mutate(etiqueta = fct_reorder(etiqueta, taquerias_por_colonia)) %>%
+  ggplot(aes(x = taquerias_por_colonia, y = etiqueta)) +
+  geom_col(fill = "indianred1", alpha = 0.8) +
+  labs(title   = "Taquerías por colonia (normalizado)",
+       subtitle = "Solo municipios con al menos 50 taquerías",
+       x = "Taquerías por colonia", y = NULL) +
+  theme_minimal()
+
+p_crudo + p_normalizado
+```
+
+---
+
+# Honestidad visual: el Factor de Mentira
+
+
+El truco más común: truncar el eje y.
+
+```{r}
+puebla_sin_capital <- taquerias %>%
+  filter(entidad == "PUEBLA") %>%
+  count(municipio, sort = TRUE) %>%
+  filter(municipio != "Puebla", n >= 9) %>%   # quitamos la capital y municipios muy chicos
+  mutate(municipio = fct_reorder(municipio, n))
+
+p_mentira <- puebla_sin_capital %>%
+  ggplot(aes(x = n, y = municipio)) +
+  geom_col(fill = "firebrick", alpha = 0.8) +
+  coord_cartesian(xlim = c(10, max(puebla_sin_capital$n) * 1.05)) +
+  scale_x_continuous(breaks = c(8, 15, 20, 25, 30, 35)) +
+  labs(title    = "Versión truncada (eje empieza en 10)",
+       subtitle = "San Andrés Cholula parece tener 4 veces más que Atlixco",
+       x = "Número de taquerías", y = NULL) +
+  theme_minimal()
+
+p_honesta <- puebla_sin_capital %>%
+  ggplot(aes(x = n, y = municipio)) +
+  geom_col(fill = "steelblue", alpha = 0.8) +
+  scale_x_continuous(breaks = c(0, 8, 15, 20, 25, 30, 35)) +
+  labs(title    = "Versión honesta (eje empieza en 0)",
+       subtitle = "Los mismos datos en proporción real",
+       x = "Número de taquerías", y = NULL) +
+  theme_minimal()
+
+p_mentira + p_honesta
+```
+
+# Facetas: comparar el mismo patrón entre grupos
+
+`facet_wrap` divide una gráfica en paneles — uno por cada valor de una variable. Es mejor que hacer múltiples gráficas a mano porque la escala es consistente entre paneles y el código es mucho más corto.
+
+```{r}
+taquerias %>%
+  # nos quedamos con 6 estados — suficientes para llenar 3 filas de 2 paneles
+  # más de 6 paneles empieza a verse apretado
+  filter(
+    entidad %in% c("CIUDAD DE MÉXICO", "PUEBLA",
+                   "GUANAJUATO", "JALISCO",
+                   "NUEVO LEÓN", "OAXACA")
+  ) %>%
+  # contamos por entidad Y estrato — necesitamos ambas para el facet
+  count(entidad, estrato) %>%
+  group_by(entidad) %>%
+  mutate(
+    # porcentaje dentro de cada estado — no del total nacional
+    # esto es clave: queremos comparar la distribución interna de cada estado,
+    # no cuántas taquerías tiene cada uno en términos absolutos
+    pct = n / sum(n) * 100,
+
+    # str_to_title para que no salga todo en mayúsculas
+    entidad = str_to_title(entidad)
+  ) %>%
+  ggplot(aes(x = pct,
+             y = estrato,     # estrato en y — barras horizontales, más fácil leer etiquetas
+             fill = estrato)) +  # color por estrato — el mismo en todos los paneles
+
+  # show.legend = FALSE porque el color ya está en el eje y — sería información duplicada
+  geom_col(show.legend = FALSE, alpha = 0.85) +
+
+  # etiqueta al final de cada barra con el porcentaje
+  # hjust = -0.2 la empuja ligeramente a la derecha del borde de la barra
+  # alternativa: hjust = 1.2 la pondría dentro de la barra
+  geom_text(aes(label = paste0(round(pct, 0), "%")),
+            hjust = -0.2, size = 3) +
+
+  # ampliamos el eje x hasta 110 para que las etiquetas no queden cortadas
+  scale_x_continuous(limits = c(0, 110)) +
+
+  # colores manuales por estrato — más control que los automáticos de ggplot
+  # los colores automáticos suelen ser difíciles de distinguir cuando hay 5+ categorías
+  # alternativa: scale_fill_brewer(palette = "Set2") para paletas predefinidas
+  scale_fill_manual(values = c(
+    "6 a 10 personas"    = "steelblue",
+    "11 a 30 personas"   = "orange",
+    "31 a 50 personas"   = "seagreen",
+    "51 a 100 personas"  = "mediumpurple",
+    "101 a 250 personas" = "firebrick"
+  )) +
+
+  # facet_wrap crea un panel por cada valor de entidad
+  # ~ entidad: la ~ es obligatoria, viene de la notación de fórmulas de R
+  # ncol = 2: dos columnas de paneles — con 6 estados quedan 3 filas de 2
+  # alternativa: ncol = 3 para 2 filas de 3, más ancho y menos alto
+  facet_wrap(~ entidad, ncol = 2) +
+
+  labs(
+    title    = "Distribución de taquerías por tamaño y estado",
+    subtitle = "El 88% son micronegocios (0-5 personas) — aquí vemos el resto",
+    x        = "% dentro de cada estado",
+    y        = NULL,   # NULL elimina la etiqueta del eje y — el estrato se explica solo
+    caption  = "Fuente: DENUE, INEGI (julio 2026)"
+  ) +
+
+  # theme_minimal quita el fondo gris y deja solo las líneas de referencia
+  # alternativas según contexto:
+  # theme_classic()  → solo ejes, sin líneas de fondo — más formal, para papers
+  # theme_bw()       → fondo blanco con cuadrícula gris — intermedio
+  # theme_light()    → similar a minimal pero con bordes más marcados
+  theme_minimal()
+```
+
+`facet_wrap(~ entidad)` le dice a ggplot "haz un panel por cada valor de `entidad`". El `~` es obligatorio — viene de la notación de fórmulas de R. `ncol = 2` controla cuántas columnas tienen los paneles.
+
+Por defecto todos los paneles comparten la misma escala, lo cual facilita la comparación. Si los volúmenes son muy distintos entre grupos, se puede agregar `scales = "free_y"` para que cada panel tenga la suya:
+
+```{r}
+# con series de tiempo — un panel por entidad
+# aquí sí usamos free_y porque CDMX tiene muchos más registros que Querétaro
+taquerias %>%
+  filter(
+    entidad %in% c("CIUDAD DE MÉXICO", "PUEBLA", "GUANAJUATO", "QUERÉTARO"),
+    !is.na(año_inc), año_inc >= 2010, año_inc <= 2023
+  ) %>%
+  count(entidad, año_inc) %>%
+  mutate(entidad = str_to_title(entidad)) %>%
+  ggplot(aes(x = año_inc, y = n, color = entidad)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.5) +
+  facet_wrap(~ entidad, ncol = 2, scales = "free_y") +
+  labs(
+    title    = "Registros anuales de taquerías por estado",
+    subtitle = "Con scales = 'free_y' cada panel tiene su propia escala",
+    x        = NULL,
+    y        = "Nuevos registros",
+    caption  = "Fuente: DENUE, INEGI (julio 2026)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")   # la leyenda sobra — cada panel ya tiene título
+```
