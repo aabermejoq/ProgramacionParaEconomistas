@@ -13,10 +13,8 @@ El curso no es exhaustivo, pero sí suficiente para empezar a ser autónomo.
 | 3 | Econometría en R | R |
 | 4 | Visualización de datos | R |
 | 5 | Web scraping | R |
-| 6 | Introducción a Python | Python |
-| 7 | For-loops y list comprehensions | Python |
-| 8 | Limpieza de datos con pandas | Python |
-| 9 | Uso de APIs | Python |
-| 10 | Machine Learning aplicado a economía | Python |
+| 6 | Introducción a Python, For-loops y list comprehensions  | Python |
+| 7 y 8 | Limpieza de datos con pandas y uso de APIs | Python |
+| 9 y 10 | Machine Learning aplicado a economía | Python |
 
 Correo : "aabermejo@tec.mx"
