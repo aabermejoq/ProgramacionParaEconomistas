@@ -1,0 +1,478 @@
+---
+title: "Sesión 4. Que una gráfica se vea bien no significa que esté bien"
+subtitle: "¿Cómo sabemos si una visualización representa correctamente los datos?"
+author: "Programar con criterio en la era de la IA · Caso: NFL Scouting Combine"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+params:
+  soluciones: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##",
+                      fig.width = 7, fig.height = 4.5)
+
+# Las soluciones se muestran plegadas. Para generar una versión sin soluciones:
+# rmarkdown::render("Sesion_4_Visualizar_y_comparar.Rmd", params = list(soluciones = FALSE))
+mostrar_sol <- if (exists("params")) isTRUE(params$soluciones) else TRUE
+
+# Ancho de impresión mayor para que las tablas no se corten en el HTML
+options(width = 100)
+```
+
+```{css, echo=FALSE}
+details.solucion { border-left: 4px solid #18bc9c; background: #f4faf8; padding: 0.5em 1em; margin: 1em 0; }
+details.solucion summary { cursor: pointer; font-weight: bold; }
+```
+
+# Antes de empezar
+
+Esta sesión es independiente de las anteriores. Además de `dplyr`, usaremos `ggplot2`, el paquete de gráficas más usado en R. Si no lo tienes, instálalo una vez desde la consola:
+
+```{r, eval=FALSE}
+install.packages(c("dplyr", "ggplot2"))
+```
+
+```{r preparacion}
+if (!requireNamespace("dplyr", quietly = TRUE)) {
+  stop("Falta el paquete dplyr. Instálalo desde la consola con install.packages(\"dplyr\").")
+}
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  stop("Falta el paquete ggplot2. Instálalo desde la consola con install.packages(\"ggplot2\").")
+}
+library(dplyr)
+library(ggplot2)
+
+ruta_datos <- "datos/NFL.csv"
+if (!file.exists(ruta_datos)) {
+  stop("No encuentro ", ruta_datos, ". La carpeta 'datos' debe estar junto a este .Rmd (ver README).")
+}
+jugadores <- read.csv(ruta_datos)
+
+if (nrow(jugadores) != 3477 || ncol(jugadores) != 18) {
+  warning("Tu NFL.csv no tiene 3,477 filas y 18 columnas: algunas cifras del texto no coincidirán.")
+}
+
+# Variable que usaremos en varias gráficas (la construimos en la sesión 3)
+jugadores <- jugadores %>%
+  mutate(peso_lb = Weight * 2.20462)   # 1 kg ≈ 2.20462 lb
+```
+
+**Organización de la sesión (90 minutos)**
+
+| Minutos | Qué hacemos |
+|---------|-------------|
+| 0–10 | El encargo: una sola diapositiva para el gerente general |
+| 10–25 | Cómo se construye una gráfica en `ggplot2` |
+| 25–45 | Ejemplo guiado: barras, histogramas y dispersión |
+| 45–65 | Actividad central: revisar una gráfica producida por una IA |
+| 65–80 | Ejercicio individual: rehacer una gráfica y justificar los cambios |
+| 80–90 | Asociación, causalidad y límites de la muestra; cierre |
+
+---
+
+# 1. El encargo
+
+El gerente general tendrá cinco minutos con los dueños del equipo. Quiere una sola diapositiva:
+
+> "Necesito una gráfica que muestre si los jugadores que eligen en el draft son más rápidos que los que no eligen. Algo claro, que se entienda en diez segundos."
+
+## Ejercicio 1. Antes de graficar
+
+a) ¿Qué variables necesitas? ¿De qué tipo es cada una: numérica o categórica?
+
+b) ¿Qué tendría que verse en la gráfica para que la respuesta fuera "sí"? ¿Y para que fuera "no mucho"?
+
+c) Recuerda la tabla de la sesión 3: los no elegidos tardaban, en promedio, unas pocas centésimas más. ¿Cómo se podría hacer que esa diferencia pareciera enorme? ¿Y que pareciera nula?
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver comentario</summary>
+
+a) `Sprint_40yd` (numérica, en segundos) y `Drafted` (categórica: `Yes`/`No`). Quizá también la posición, porque ya vimos que la velocidad depende mucho de ella.
+
+b) Para un "sí" claro, los tiempos de los elegidos tendrían que ser visiblemente menores que los de los no elegidos, no solo en promedio sino en buena parte de la distribución. Si las dos distribuciones se superponen casi por completo, la respuesta honesta es "un poco, en promedio".
+
+c) Cortando el eje vertical cerca de los valores (por ejemplo, empezando en 4.70 segundos), una diferencia de seis centésimas ocupa toda la gráfica. Con el eje desde cero, las dos barras se verían casi iguales. Ninguna de las dos opciones es neutral; por eso hay que saber qué se eligió y por qué.
+</details>
+```
+
+---
+
+# 2. Cómo se construye una gráfica en `ggplot2`
+
+Toda gráfica de `ggplot2` tiene tres piezas mínimas:
+
+1. **Los datos**: qué tabla usar.
+2. **La estética** (`aes()`): qué columna va en cada eje, o en el color.
+3. **La geometría** (`geom_...()`): con qué se dibuja: barras, puntos, un histograma...
+
+Las piezas se suman con `+`. Una gráfica de barras con el número de jugadores por posición:
+
+```{r}
+ggplot(jugadores, aes(x = Position)) +
+  geom_bar()
+```
+
+`geom_bar()` cuenta cuántas filas hay de cada posición y dibuja una barra por cada una. Un error muy frecuente al principio es usar `%>%` en lugar de `+` para unir las piezas de la gráfica. El mensaje de error lo dice bastante bien:
+
+```{r, error=TRUE}
+ggplot(jugadores, aes(x = Position)) %>%
+  geom_bar()
+```
+
+Qué gráfica conviene depende del tipo de pregunta:
+
+| Pregunta | Variables | Gráfica habitual |
+|----------|-----------|------------------|
+| ¿Cuántos jugadores hay de cada posición? | una categórica | barras |
+| ¿Cómo se reparten los tiempos en 40 yardas? | una numérica | histograma |
+| ¿Se relacionan el peso y el tiempo? | dos numéricas | dispersión (puntos) |
+
+---
+
+# 3. Ejemplo guiado
+
+## Barras con nombres, unidades y orden
+
+La gráfica anterior funciona, pero las barras están en orden alfabético y los ejes no dicen nada. Contemos primero y ordenemos después. `count(Position)` es un atajo de `group_by(Position) %>% summarise(n = n())`:
+
+```{r}
+conteo_posiciones <- jugadores %>%
+  count(Position)
+
+ggplot(conteo_posiciones, aes(x = reorder(Position, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Jugadores en el Combine por posición, 2009-2019",
+       x = "Posición",
+       y = "Número de jugadores",
+       caption = "Fuente: NFL.csv (Kaggle, datos de Pro Football Reference).")
+```
+
+`geom_col()` dibuja barras con la altura que ya calculamos (`n`). `reorder(Position, n)` ordena las posiciones según `n`. `coord_flip()` gira la gráfica para que los nombres se lean mejor. `labs()` pone título, nombres de ejes y una nota al pie: la gráfica tiene que poder entenderse sin el código.
+
+## Histogramas: cómo se reparte una variable numérica
+
+```{r, message=TRUE}
+ggplot(jugadores, aes(x = Sprint_40yd)) +
+  geom_histogram()
+```
+
+Lee los dos avisos que aparecen junto a la gráfica. El primero dice que `ggplot2` eligió 30 intervalos (*bins*) por su cuenta y sugiere que elijas tú. El segundo dice que **eliminó 174 filas**: los jugadores sin tiempo. La gráfica no lo muestra; solo el aviso. Si no lo lees, no lo sabes.
+
+Elijamos un ancho de intervalo con sentido (cinco centésimas de segundo) y pongamos unidades:
+
+```{r}
+ggplot(jugadores, aes(x = Sprint_40yd)) +
+  geom_histogram(binwidth = 0.05) +
+  labs(title = "Tiempos en la carrera de 40 yardas",
+       x = "Tiempo (segundos; menos es más rápido)",
+       y = "Número de jugadores",
+       caption = "174 jugadores sin tiempo registrado no aparecen.")
+```
+
+La distribución no es simétrica: tiene un pico alto alrededor de 4.5 segundos y una cola larga hacia la derecha, con un pequeño repunte cerca de 5.2. Una forma así suele indicar que se mezclan grupos distintos; aquí, jugadores ligeros y rápidos (receptores, defensivos de cobertura) y jugadores pesados (linieros, que en su mayoría corren por encima de 5 segundos).
+
+## Cuando la gráfica refleja cómo se midió
+
+En la sesión 1 vimos que la estatura se midió en pulgadas enteras. Mira qué pasa con un histograma automático:
+
+```{r}
+ggplot(jugadores, aes(x = Height)) +
+  geom_histogram()
+```
+
+Los huecos sugieren que hay estaturas que nadie tiene, alternadas con otras muy frecuentes. Es un artefacto: hay 18 estaturas posibles y 30 intervalos, así que algunos intervalos quedan vacíos. Con un intervalo de una pulgada (0.0254 m), la forma real aparece:
+
+```{r}
+ggplot(jugadores, aes(x = Height * 100)) +
+  geom_histogram(binwidth = 2.54) +
+  labs(title = "Estatura de los jugadores del Combine",
+       x = "Estatura (cm; medida originalmente en pulgadas)",
+       y = "Número de jugadores")
+```
+
+## Dispersión: dos variables numéricas
+
+```{r}
+ggplot(jugadores, aes(x = peso_lb, y = Sprint_40yd)) +
+  geom_point(alpha = 0.3) +
+  labs(title = "Peso y tiempo en 40 yardas",
+       x = "Peso (libras)",
+       y = "Tiempo en 40 yardas (segundos)")
+```
+
+`alpha = 0.3` hace los puntos semitransparentes para que se note dónde se acumulan. La relación es clara: los jugadores más pesados tardan más. La correlación lo resume en un número (1 sería una línea perfecta hacia arriba; 0, ninguna relación lineal):
+
+```{r}
+cor(jugadores$peso_lb, jugadores$Sprint_40yd, use = "complete.obs")
+```
+
+`use = "complete.obs"` le dice a `cor()` que use solo los jugadores con ambos datos: otra forma de `na.rm`.
+
+## Los puntos raros
+
+Hay un punto arriba de todos, en 6 segundos. ¿Quién es?
+
+```{r}
+jugadores %>%
+  filter(Sprint_40yd > 5.8) %>%
+  select(Year, Player, Position, peso_lb, Sprint_40yd, Drafted)
+```
+
+¿Es un error de captura o un tiempo real? Con este archivo no hay forma de saberlo. Un valor atípico no es lo mismo que un error. Lo que no hay que hacer es borrarlo porque "se ve raro", ni dejarlo sin mirar. Si importa para tu conclusión, se verifica en la fuente original; si no se puede verificar, se reporta.
+
+---
+
+# 4. Actividad central: revisar una gráfica producida por una IA
+
+## La petición y la respuesta
+
+Le pedimos a un asistente de IA:
+
+> "Haz una gráfica atractiva en ggplot2 que muestre que los jugadores elegidos en el draft son más rápidos que los no elegidos. Los datos están en la tabla `jugadores`, con las columnas `Sprint_40yd` y `Drafted`."
+
+Fíjate en la petición: ya trae la conclusión ("que muestre que son más rápidos"). Una IA tiende a cumplir lo que se le pide. Esta es una respuesta típica, que dejamos fija para que todos revisen la misma gráfica:
+
+```{r}
+tiempos_por_grupo <- jugadores %>%
+  group_by(Drafted) %>%
+  summarise(tiempo_promedio = mean(Sprint_40yd, na.rm = TRUE))
+
+ggplot(tiempos_por_grupo, aes(x = Drafted, y = tiempo_promedio, fill = Drafted)) +
+  geom_col(width = 0.6) +
+  coord_cartesian(ylim = c(4.70, 4.83)) +
+  scale_fill_manual(values = c("No" = "grey60", "Yes" = "darkgreen")) +
+  labs(title = "Los jugadores elegidos en el draft son mucho más rápidos",
+       x = "", y = "Velocidad") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Y el texto que la acompaña:
+
+> *"La gráfica muestra claramente que los jugadores seleccionados en el draft son significativamente más rápidos. Esto confirma que la velocidad es un factor determinante para ser elegido."*
+
+Se ve limpia y profesional. La pregunta es si representa bien los datos.
+
+## Tu revisión (en parejas, unos 15 minutos)
+
+Revisa la gráfica con estas cinco preguntas. Para cada una, escribe qué encontraste y, cuando sea posible, compruébalo con código.
+
+1. **Ejes y unidades.** ¿Qué hay en el eje vertical? ¿Coincide con su nombre? ¿Qué barra parece "más veloz" para alguien que solo lee el eje?
+2. **Tipo de gráfica.** ¿Una barra por grupo es adecuada para una variable numérica con miles de valores? ¿Qué información se pierde?
+3. **Escala.** ¿Dónde empieza el eje vertical? ¿Qué tan grande es la diferencia real, en segundos y en porcentaje?
+4. **Observaciones omitidas.** ¿Cuántos jugadores hay detrás de cada barra? ¿Quiénes no aparecen? ¿Quiénes aparecen y quizá no deberían?
+5. **El texto.** ¿Qué afirma? ¿Qué parte de eso se puede sostener con esta gráfica?
+
+```{r}
+# Tus comprobaciones
+
+```
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver solución</summary>
+```
+
+```{r sol-revision, eval = mostrar_sol, echo = mostrar_sol}
+# ¿Cuántos jugadores hay detrás de cada barra, y cuántos quedan fuera?
+jugadores %>%
+  group_by(Drafted) %>%
+  summarise(jugadores = n(),
+            con_tiempo = sum(!is.na(Sprint_40yd)),
+            tiempo_promedio = mean(Sprint_40yd, na.rm = TRUE))
+
+# Diferencia en segundos y en porcentaje
+diferencia <- tiempos_por_grupo$tiempo_promedio[1] - tiempos_por_grupo$tiempo_promedio[2]
+diferencia
+100 * diferencia / tiempos_por_grupo$tiempo_promedio[2]
+
+# La misma gráfica con el eje desde cero
+ggplot(tiempos_por_grupo, aes(x = Drafted, y = tiempo_promedio)) +
+  geom_col(width = 0.6) +
+  labs(x = "¿Fue elegido en el draft?", y = "Tiempo promedio (segundos)")
+```
+
+```{asis, echo = mostrar_sol}
+1. **Ejes.** El eje dice "Velocidad", pero lo que se grafica es el **tiempo** en segundos. Un tiempo mayor es *más lento*. La barra más alta es la de los no elegidos; quien lea "Velocidad" entenderá que ellos son los más rápidos, justo lo contrario del título. Además, el eje no tiene unidades y las categorías quedaron en inglés (`Yes`/`No`) sin explicación.
+
+2. **Tipo de gráfica.** Cada barra resume más de mil tiempos en un solo número. No se ve cuánto varían los tiempos dentro de cada grupo ni cuánto se superponen los dos grupos. Para eso sirve un histograma.
+
+3. **Escala.** El eje empieza en 4.70. La diferencia real es de unas 6 centésimas de segundo (4.81 frente a 4.75), alrededor del 1.4%. Con el eje cortado, la barra de los no elegidos parece el doble de alta. Con el eje desde cero, las dos barras son casi idénticas. Cortar un eje no siempre es incorrecto, pero en una gráfica de barras la altura se lee como cantidad, y aquí la distorsión es enorme.
+
+4. **Omitidos.** `na.rm = TRUE` dejó fuera a 174 jugadores sin tiempo, y como el promedio se calculó antes de graficar, `ggplot2` ni siquiera avisa. Además, la gráfica mezcla todas las posiciones, incluidos pateadores y despejadores, y ya vimos que la posición explica buena parte del tiempo.
+
+5. **El texto.** "Mucho más rápidos" exagera una diferencia del 1.4%. "Significativamente" sugiere una prueba estadística que nadie hizo. "Confirma que la velocidad es un factor determinante para ser elegido" es una afirmación causal: la gráfica muestra una asociación entre dos grupos, no que la velocidad sea la razón de la elección. Lo único que se sostiene es algo como: "en promedio, los elegidos corrieron unas 6 centésimas más rápido que los no elegidos".
+
+Ninguna de estas cosas es un error de programación. El código hace exactamente lo que dice. Los problemas están en las decisiones: qué graficar, cómo escalarlo, cómo nombrarlo y qué concluir.
+</details>
+```
+
+## Una versión revisada
+
+Una forma de responder la pregunta del gerente con más honestidad, sin perder claridad: comparar los tiempos **dentro de cada tipo de posición**, mostrando el promedio de cada grupo con un punto.
+
+```{r}
+tiempos_por_posicion <- jugadores %>%
+  filter(Player_Type != "special_teams", !is.na(Sprint_40yd)) %>%
+  group_by(Position_Type, Drafted) %>%
+  summarise(jugadores = n(),
+            tiempo_promedio = mean(Sprint_40yd),
+            .groups = "drop") %>%
+  mutate(Drafted = ifelse(Drafted == "Yes", "Elegido", "No elegido"))
+
+ggplot(tiempos_por_posicion,
+       aes(x = tiempo_promedio, y = Position_Type, color = Drafted)) +
+  geom_point(size = 3) +
+  labs(title = "Tiempo promedio en 40 yardas según tipo de posición",
+       subtitle = "Los elegidos son algo más rápidos dentro de cada tipo de posición",
+       x = "Tiempo promedio (segundos; menos es más rápido)",
+       y = NULL, color = NULL,
+       caption = "Excluye especialistas (K, P, LS) y 152 jugadores de otras posiciones sin tiempo. Combine 2009-2019.")
+```
+
+Esta gráfica cuenta una historia más completa: en todas las posiciones, los elegidos son algo más rápidos, pero la diferencia entre posiciones es mucho mayor que la diferencia entre elegidos y no elegidos. Tampoco es "la" gráfica correcta: oculta la variación dentro de cada grupo y no dice cuántos jugadores hay detrás de cada punto.
+
+## Si tienes acceso a una IA
+
+Prueba a reformular la petición sin incluir la conclusión:
+
+> "Quiero saber si los jugadores elegidos en el draft corren más rápido las 40 yardas que los no elegidos. Propón una gráfica en ggplot2 que muestre la distribución de tiempos de ambos grupos sin exagerar ni ocultar diferencias. Explica qué decisiones tomas (escala, datos excluidos, tipo de gráfica)."
+
+Revisa su propuesta con las mismas cinco preguntas. Que la petición sea mejor no garantiza que la respuesta lo sea.
+
+Sin IA, el ejercicio es el mismo con la gráfica incluida arriba.
+
+---
+
+# 5. Ejercicio individual: rehacer una gráfica
+
+Guarda una copia como `Sesion_4_v1.Rmd` antes de empezar.
+
+## Ejercicio 2
+
+Elige **una** de estas opciones:
+
+- **Opción A.** Toma la gráfica de la IA y corrígela con el menor número de cambios posible para que deje de engañar. Mantén el tipo de gráfica.
+- **Opción B.** Responde a la pregunta del gerente con un histograma que compare los tiempos de elegidos y no elegidos. Pista: `facet_wrap(~ Drafted, ncol = 1)` dibuja un panel por grupo, uno encima del otro.
+- **Opción C.** Haz una gráfica para una sola posición (por ejemplo, `CB` o `WR`) que compare a elegidos y no elegidos.
+
+En cualquier caso:
+
+1. Pon título, ejes con unidades y una nota al pie que diga qué datos quedaron fuera.
+2. Escribe debajo de la gráfica un texto de una o dos frases que **no afirme más** de lo que la gráfica muestra.
+3. Registra en la bitácora cada cambio y por qué lo hiciste.
+
+```{r}
+# Tu gráfica
+
+```
+
+*Mi texto para acompañar la gráfica:*
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver una solución para cada opción</summary>
+```
+
+```{r sol-opcion-a, eval = mostrar_sol, echo = mostrar_sol}
+# Opción A: misma gráfica de barras, sin distorsiones
+ggplot(tiempos_por_grupo, aes(x = Drafted, y = tiempo_promedio)) +
+  geom_col(width = 0.6, fill = "grey50") +
+  scale_x_discrete(labels = c("No" = "No elegido", "Yes" = "Elegido")) +
+  labs(title = "Tiempo promedio en 40 yardas, elegidos y no elegidos en el draft",
+       x = NULL,
+       y = "Tiempo promedio (segundos; menos es más rápido)",
+       caption = "Todas las posiciones. 174 jugadores sin tiempo no se incluyen. Combine 2009-2019.")
+```
+
+```{r sol-opcion-b, eval = mostrar_sol, echo = mostrar_sol}
+# Opción B: distribución completa de cada grupo
+jugadores %>%
+  filter(!is.na(Sprint_40yd)) %>%
+  mutate(Drafted = ifelse(Drafted == "Yes", "Elegidos", "No elegidos")) %>%
+  ggplot(aes(x = Sprint_40yd)) +
+  geom_histogram(binwidth = 0.05) +
+  facet_wrap(~ Drafted, ncol = 1) +
+  labs(title = "Tiempos en 40 yardas de elegidos y no elegidos",
+       x = "Tiempo (segundos; menos es más rápido)",
+       y = "Número de jugadores",
+       caption = "174 jugadores sin tiempo no se incluyen. Combine 2009-2019.")
+```
+
+```{r sol-opcion-c, eval = mostrar_sol, echo = mostrar_sol}
+# Opción C: una sola posición
+jugadores %>%
+  filter(Position == "CB", !is.na(Sprint_40yd)) %>%
+  mutate(Drafted = ifelse(Drafted == "Yes", "Elegidos", "No elegidos")) %>%
+  ggplot(aes(x = Sprint_40yd)) +
+  geom_histogram(binwidth = 0.03) +
+  facet_wrap(~ Drafted, ncol = 1) +
+  labs(title = "Cornerbacks: tiempos en 40 yardas",
+       x = "Tiempo (segundos; menos es más rápido)",
+       y = "Número de jugadores",
+       caption = "11 cornerbacks sin tiempo no se incluyen. Combine 2009-2019.")
+```
+
+```{asis, echo = mostrar_sol}
+**Textos posibles.**
+
+- A: "En promedio, los jugadores elegidos corrieron las 40 yardas unas 6 centésimas de segundo más rápido que los no elegidos (4.75 frente a 4.81 segundos)."
+- B: "Los tiempos de los elegidos se concentran algo más a la izquierda (más rápidos), pero las dos distribuciones se superponen mucho: hay no elegidos muy rápidos y elegidos lentos." Ojo al leer esta gráfica: el panel de elegidos tiene casi el doble de jugadores (2,155 frente a 1,148), así que hay que comparar la forma y la posición de las distribuciones, no la altura de las barras.
+- C: "Entre los *cornerbacks*, los elegidos tienden a ser más rápidos: 7 de cada 10 no elegidos tardaron más de 4.5 segundos, frente a algo más de un tercio de los elegidos. Esto describe una asociación en este grupo de jugadores, no la razón por la que fueron elegidos."
+
+En la opción A, la decisión clave es quitar `coord_cartesian()`: con el eje desde cero, la gráfica muestra que la diferencia es pequeña. Si lo que se quiere es ver diferencias pequeñas, una gráfica de barras no es la herramienta adecuada; un histograma o una gráfica de puntos lo hace sin distorsionar.
+</details>
+```
+
+**Bitácora de cambios**
+
+| Versión | Qué cambié | Por qué | ¿Cambió lo que la gráfica comunica? |
+|---------|------------|---------|-------------------------------------|
+| v1 | Versión original | — | — |
+| v2 | | | |
+
+---
+
+# 6. Asociación, causalidad y límites de la muestra
+
+## ¿El peso "hace" más lentos a los jugadores?
+
+En la gráfica de dispersión vimos una correlación de 0.85 entre peso y tiempo. Es tentador decir "el peso hace más lento a un jugador". Mira qué pasa si calculamos la misma correlación **dentro** de cada tipo de posición:
+
+```{r}
+jugadores %>%
+  filter(Player_Type != "special_teams") %>%
+  group_by(Position_Type) %>%
+  summarise(jugadores = n(),
+            correlacion = cor(peso_lb, Sprint_40yd, use = "complete.obs"))
+```
+
+En todos los tipos de posición la correlación es menor que 0.85, y entre los defensivos de cobertura y los *linebackers* es casi nula. Los valores más altos aparecen en grupos que juntan posiciones de pesos muy distintos: `defensive_lineman` reúne a los *defensive ends* (unas 269 libras en promedio) y a los *defensive tackles* (unas 308). Si repites el cálculo con `group_by(Position)`, ninguna posición pasa de 0.5. Buena parte de la correlación general viene de comparar grupos de jugadores muy distintos (linieros contra receptores), no de que unos kilos más vuelvan lento a un jugador. La gráfica de dispersión mostraba una asociación real; la explicación causal ("el peso hace...") necesitaba otra evidencia.
+
+Lo mismo vale para la pregunta del gerente. Aunque los elegidos sean más rápidos, eso no demuestra que se les eligiera *por* ser rápidos. Pueden ser mejores en muchas otras cosas que no están en este archivo (su rendimiento en la universidad, por ejemplo) y que también se asocian con la velocidad.
+
+## Qué representa esta muestra
+
+Antes de generalizar, recuerda a quién describe este archivo:
+
+- Solo jugadores invitados al Combine, no todos los universitarios que aspiran a la NFL.
+- 2019 tiene muchos menos jugadores que los demás años (220 frente a más de 300), y la mayoría de los tiempos faltantes son de 2017 a 2019.
+- Las pruebas que faltan no faltan al azar: dependen de la posición y, probablemente, de otras cosas que no vemos.
+
+## Para cerrar
+
+1. ¿Qué tendría que decir el texto que acompaña una gráfica para que no afirme más de lo que muestra?
+
+2. Si el gerente pregunta "¿entonces deberíamos elegir siempre al más rápido?", ¿qué le responderías con estos datos?
+
+3. La gráfica de la IA no tenía ningún error de programación. ¿Qué te permitió detectar sus problemas? ¿Lo habrías notado si no supieras qué hace `coord_cartesian()` o `na.rm = TRUE`?
+
+**Para la próxima sesión.** En la sesión 5 harás tu propio análisis completo, de la pregunta a las conclusiones, con o sin ayuda de una IA. Trae pensada una pregunta de scouting que te interese.

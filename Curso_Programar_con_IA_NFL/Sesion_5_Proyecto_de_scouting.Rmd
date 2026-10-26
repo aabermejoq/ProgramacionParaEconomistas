@@ -1,0 +1,562 @@
+---
+title: "Sesión 5. Ser responsable de un análisis, aunque la IA escriba el código"
+subtitle: "¿Podemos presentar una recomendación de scouting que podamos explicar y defender?"
+author: "Programar con criterio en la era de la IA · Caso: NFL Scouting Combine"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+params:
+  soluciones: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##",
+                      fig.width = 7, fig.height = 4.5)
+
+# El ejemplo resuelto del final se muestra plegado. Para generar una versión sin él:
+# rmarkdown::render("Sesion_5_Proyecto_de_scouting.Rmd", params = list(soluciones = FALSE))
+mostrar_sol <- if (exists("params")) isTRUE(params$soluciones) else TRUE
+
+# Ancho de impresión mayor para que las tablas no se corten en el HTML
+options(width = 100)
+```
+
+```{css, echo=FALSE}
+details.solucion { border-left: 4px solid #18bc9c; background: #f4faf8; padding: 0.5em 1em; margin: 1em 0; }
+details.solucion summary { cursor: pointer; font-weight: bold; }
+```
+
+# Antes de empezar
+
+Hoy no hay ejemplo guiado: el análisis lo haces tú. Este archivo contiene las instrucciones, una plantilla para tu proyecto, la rúbrica y las preguntas de la defensa final. Al final hay un ejemplo resuelto con otra pregunta, para consultarlo después de clase.
+
+**Cómo trabajar:**
+
+1. Guarda una copia de este archivo como `Proyecto_TuApellido_v1.Rmd`, en la misma carpeta (junto a `datos/`). Trabaja en la copia.
+2. En tu copia, completa la sección 5 (la plantilla). Puedes borrar las demás secciones si te estorban, pero no borres el bloque de preparación.
+3. Haz **Knit** con frecuencia, no solo al final. Si algo deja de compilar, sabrás qué cambio lo rompió.
+4. Antes de cualquier cambio importante, guarda una nueva versión (`_v2`, `_v3`...) y anótalo en la tabla de cambios.
+
+```{r preparacion}
+if (!requireNamespace("dplyr", quietly = TRUE)) {
+  stop("Falta el paquete dplyr. Instálalo desde la consola con install.packages(\"dplyr\").")
+}
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  stop("Falta el paquete ggplot2. Instálalo desde la consola con install.packages(\"ggplot2\").")
+}
+library(dplyr)
+library(ggplot2)
+
+ruta_datos <- "datos/NFL.csv"
+if (!file.exists(ruta_datos)) {
+  stop("No encuentro ", ruta_datos, ". La carpeta 'datos' debe estar junto a este .Rmd (ver README).")
+}
+jugadores <- read.csv(ruta_datos)
+
+if (nrow(jugadores) != 3477 || ncol(jugadores) != 18) {
+  warning("Tu NFL.csv no tiene 3,477 filas y 18 columnas: algunas cifras del texto no coincidirán.")
+}
+```
+
+**Organización de la sesión (90 minutos)**
+
+| Minutos | Qué hacemos | Pasos de la rutina |
+|---------|-------------|--------------------|
+| 0–10 | Elegir una pregunta y escribir qué esperas encontrar | Definir, anticipar |
+| 10–45 | Seleccionar datos, construir la variable, la tabla y las gráficas | Construir, leer, comprobar |
+| 45–60 | Probar una alternativa razonable y registrar los cambios | Comparar, documentar |
+| 60–75 | Conclusiones, limitación y decisiones | Comunicar |
+| 75–90 | Defensa breve con el profesor o en parejas | Todos |
+
+---
+
+# 1. El encargo final
+
+El jefe de scouting le pide a cada analista una recomendación breve, basada en los datos del Combine, sobre algún aspecto de la evaluación de prospectos:
+
+> "No necesito certezas. Necesito algo que puedas explicarme, que yo pueda revisar y que no se caiga a la primera pregunta."
+
+Tu entrega es tu copia de este archivo, compilada a HTML, con:
+
+- una pregunta concreta;
+- importación e inspección de los datos;
+- selección y filtrado de observaciones, con cuántas quedaron fuera y por qué;
+- una variable derivada, si la pregunta lo pide;
+- un resumen por grupos;
+- dos gráficas pertinentes;
+- tres conclusiones sustentadas en tus resultados;
+- una limitación importante;
+- una explicación breve de tus decisiones;
+- una tabla de cambios;
+- un registro de cómo usaste (o no) la IA.
+
+## Una rutina que ya conoces
+
+En las cuatro sesiones anteriores seguimos, casi siempre en el mismo orden, unos pasos que conviene hacer explícitos ahora:
+
+1. **Definir** el problema en lenguaje cotidiano antes de escribir código.
+2. **Anticipar** qué resultado esperas y por qué.
+3. **Construir**: escribir el código o pedir una propuesta a la IA.
+4. **Leer** las instrucciones relevantes hasta entender qué hacen.
+5. **Comprobar** la lógica, los datos y los casos problemáticos (que las cuentas cuadren, que los rangos tengan sentido, qué pasó con los `NA`).
+6. **Comparar** con otra decisión razonable.
+7. **Documentar** qué cambiaste y por qué.
+8. **Comunicar** qué se puede concluir y qué no.
+
+No es un procedimiento que haya que seguir al pie de la letra. Es una lista de cosas que, si te saltas, suelen salir caras. La plantilla de la sección 5 está organizada con estos pasos.
+
+---
+
+# 2. Cómo se evalúa
+
+Usar IA **no resta puntos**. Tampoco los suma. Lo que se evalúa es si entiendes, verificas y puedes justificar lo que presentas, lo hayas escrito tú o no.
+
+| Criterio | Insuficiente | En desarrollo | Logrado |
+|----------|--------------|---------------|---------|
+| **Comprensión del código** | No puede explicar qué hacen partes centrales de su código | Explica la mayoría de las instrucciones, con alguna confusión | Explica cada instrucción relevante y predice qué pasaría si la cambia |
+| **Decisiones y supuestos** | No identifica decisiones; presenta el código como "lo que había que hacer" | Identifica algunas decisiones (filtro, faltantes) pero no sus consecuencias | Identifica las decisiones principales, sus alternativas y cómo afectan al resultado |
+| **Verificación** | No hay comprobaciones, o los números del texto no coinciden con los de R | Hay alguna comprobación (conteos, rangos) | Las cuentas cuadran, los faltantes están contados y los resultados extraños se investigaron |
+| **Interpretación** | Conclusiones causales o generalizaciones que los datos no sostienen | Conclusiones correctas pero sin contexto (sin tamaños de grupo, sin comparación) | Conclusiones con su comparación, su tamaño de muestra y sin lenguaje causal injustificado |
+| **Justificación de cambios** | No hay tabla de cambios, o es una lista sin motivos | Registra cambios pero no su efecto en los resultados | Registra qué cambió, por qué y qué pasó con los resultados |
+| **Reproducibilidad** | El archivo no compila, usa rutas absolutas o depende de objetos que no crea | Compila, pero otra persona tendría dudas sobre cómo se obtuvo algún resultado | Compila de principio a fin y cualquier cifra se puede rastrear hasta su código |
+| **Comunicación** | Repite la salida de R sin interpretarla, u omite limitaciones | Interpreta, pero la limitación es genérica ("hacen falta más datos") | Conclusiones claras para alguien que no programa y una limitación concreta para *esta* pregunta |
+
+---
+
+# 3. Uso de IA durante el proyecto
+
+Puedes usar un asistente de IA para generar código, entender errores o proponer comprobaciones. Algunas peticiones que suelen dar mejores resultados:
+
+- *"Escribe una solución sencilla en R para responder esta pregunta: [...]. Usa solo `dplyr` y `ggplot2`. Explica cada instrucción y evita funciones que todavía no conozco: [lista]."*
+- *"¿Qué decisiones estás tomando al filtrar estos datos? ¿Qué observaciones quedarían excluidas?"*
+- *"Ayúdame a verificar que este código calcula lo que pretendo: [...]. Sugiere comprobaciones concretas."*
+- *"Propón otra forma de calcular este indicador y explica en qué condiciones las dos soluciones darían resultados distintos."*
+
+Tres advertencias que ya viviste en el curso:
+
+- Las explicaciones de la IA también se comprueban. En la sesión 2, una explicación decía "menos de 4.4" sobre un código que usaba `<=`.
+- Dale contexto sobre los datos: unidades, qué significan los `NA`, qué columnas existen. En la sesión 3, el Speed Score salió mal porque nadie le dijo que el peso estaba en kilos.
+- No reemplaces código que funciona por una propuesta de la IA sin guardar antes una versión y comparar los resultados.
+
+**Sin IA** el proyecto es igual de viable: todo lo que necesitas está en las sesiones 1 a 4 y en la chuleta del Anexo A.
+
+---
+
+# 4. Elige una pregunta
+
+Elige una de estas preguntas o propón una propia (consúltala con el profesor en los primeros minutos). Las pistas señalan dónde suele haber problemas, no cuál es la respuesta.
+
+**A. Receptores y salto vertical.** Entre los receptores abiertos (`WR`), ¿el salto vertical distingue a los elegidos de los no elegidos? ¿Y a los de primera ronda?
+*Pistas:* `Vertical_Jump` está en centímetros. 74 receptores no tienen salto vertical registrado.
+
+**B. Linebackers: ¿qué prueba importa más?** Entre los *linebackers* (`Position_Type == "line_backer"`), ¿qué prueba se asocia más con ser elegido: 40 yardas, salto largo o tres conos?
+*Pistas:* las tres pruebas tienen unidades distintas y no se pueden sumar ni comparar directamente; compara cada una por separado. La prueba de tres conos tiene muchos faltantes (141 de 380) y en ella, como en las 40 yardas, menos es mejor.
+
+**C. Corredores y Speed Score.** Entre los corredores (`RB`), ¿el Speed Score distingue mejor a los grupos del draft que el tiempo en 40 yardas por sí solo?
+*Pistas:* revisa la sesión 3 para la definición y las unidades. Hay 14 corredores sin tiempo.
+
+**D. Universidades.** ¿De qué universidades conviene seguir de cerca a los prospectos? ¿Importa más cuántos jugadores elegidos aporta una universidad o qué proporción de sus jugadores es elegida?
+*Pistas:* hay 253 universidades y 71 tienen un solo jugador en el archivo. Piensa qué significa una proporción de elegidos del 100% con un solo jugador.
+
+**E. Pregunta propia.** Debe poder responderse con las columnas de `NFL.csv` y con las herramientas del curso.
+
+---
+
+# 5. Plantilla del proyecto
+
+Completa cada apartado en tu copia. Los bloques de código traen ejemplos comentados (con `#`): adáptalos a tu pregunta y quita el `#` de las líneas que uses.
+
+## 5.1 Pregunta (definir)
+
+*En lenguaje cotidiano:*
+
+*En versión precisa (quiénes, qué variable, qué comparación, qué años):*
+
+## 5.2 Lo que espero encontrar (anticipar)
+
+*Qué espero y por qué. Escríbelo antes de calcular nada.*
+
+## 5.3 Importación e inspección
+
+Los datos ya están cargados en el bloque de preparación. Inspecciona lo que sea relevante para tu pregunta: tamaño, columnas que vas a usar, rangos, faltantes.
+
+```{r p-inspeccion}
+# dim(jugadores)
+# summary(jugadores$Vertical_Jump)
+# sum(is.na(jugadores$Vertical_Jump))
+# table(jugadores$Position)
+```
+
+*Qué encontré que afecte a mi pregunta:*
+
+## 5.4 Selección y filtrado
+
+```{r p-filtro}
+# mi_muestra <- jugadores %>%
+#   filter(Position == "WR")
+#
+# nrow(mi_muestra)
+# sum(is.na(mi_muestra$Vertical_Jump))   # ¿cuántos no tienen el dato que me interesa?
+```
+
+*A quiénes incluí, a quiénes excluí y por qué. ¿Cuadran las cuentas?*
+
+## 5.5 Variable derivada
+
+Si tu pregunta la necesita. Por ejemplo, el grupo del draft (sesión 3), el peso en libras o el Speed Score. Comprueba que la variable dice lo que crees: cuenta categorías, mira algunos casos, compara con algo que sepas por fuera.
+
+```{r p-variable}
+# mi_muestra <- mi_muestra %>%
+#   mutate(grupo_draft = case_when(
+#     Drafted == "No"                       ~ "No elegido",
+#     grepl("/ 1st /", Drafted..tm.rnd.yr.) ~ "Primera ronda",
+#     TRUE                                  ~ "Rondas 2 a 7"
+#   ))
+#
+# table(mi_muestra$grupo_draft)
+```
+
+*Definición de la variable y cómo comprobé que está bien construida:*
+
+## 5.6 Resumen por grupos
+
+Incluye siempre cuántos jugadores hay en cada grupo y cuántos tienen dato.
+
+```{r p-resumen}
+# mi_muestra %>%
+#   group_by(grupo_draft) %>%
+#   summarise(jugadores = n(),
+#             con_dato = sum(!is.na(Vertical_Jump)),
+#             media = mean(Vertical_Jump, na.rm = TRUE),
+#             mediana = median(Vertical_Jump, na.rm = TRUE))
+```
+
+*Qué muestra la tabla:*
+
+## 5.7 Dos visualizaciones
+
+Cada gráfica con título, ejes con unidades y una nota sobre los datos excluidos. Debajo, una o dos frases que no afirmen más de lo que la gráfica muestra.
+
+```{r p-grafica-1}
+# ggplot(mi_muestra, aes(x = Vertical_Jump)) +
+#   geom_histogram(binwidth = 2.54) +
+#   facet_wrap(~ grupo_draft, ncol = 1) +
+#   labs(title = "...", x = "... (unidades)", y = "Número de jugadores",
+#        caption = "... jugadores sin dato no se incluyen.")
+```
+
+*Qué muestra la gráfica 1:*
+
+```{r p-grafica-2}
+
+```
+
+*Qué muestra la gráfica 2:*
+
+## 5.8 Comprobaciones
+
+Al menos tres comprobaciones explícitas, con su código. Por ejemplo: que las cuentas cuadren; que los valores mínimo y máximo sean plausibles; revisar a mano dos o tres jugadores; contar faltantes por grupo; repetir un cálculo de otra forma.
+
+```{r p-comprobaciones}
+
+```
+
+*Qué comprobé y qué encontré:*
+
+## 5.9 Una alternativa comparada
+
+Cambia **una** decisión razonable (el umbral, la medida, el grupo de comparación, el tratamiento de los faltantes, los años incluidos...) y compara el resultado con el original.
+
+```{r p-alternativa}
+
+```
+
+*Qué cambié, qué pasó y qué versión presento (y por qué):*
+
+## 5.10 Conclusiones
+
+Tres conclusiones. Cada una debe apoyarse en un resultado concreto de arriba (indica cuál).
+
+1.
+2.
+3.
+
+## 5.11 Limitación principal
+
+*Una limitación concreta de este análisis (no "hacen falta más datos"), y cómo podría afectar a las conclusiones:*
+
+## 5.12 Decisiones
+
+| Decisión | Alternativa que descarté | Por qué elegí esta |
+|----------|--------------------------|--------------------|
+| | | |
+| | | |
+| | | |
+
+## 5.13 Tabla de cambios
+
+| Versión | Qué cambié | Por qué | Efecto en los resultados |
+|---------|------------|---------|--------------------------|
+| v1 | | | |
+| v2 | | | |
+
+## 5.14 Registro de uso de IA
+
+Si no usaste IA, escribe "No usé IA" y deja la tabla vacía.
+
+| Qué le pedí | Qué usé de su respuesta | Qué cambié y por qué | Cómo lo comprobé |
+|-------------|-------------------------|----------------------|------------------|
+| | | | |
+
+---
+
+# 6. La defensa
+
+En los últimos minutos, el profesor (o un compañero, con esta lista) te hará dos o tres de estas preguntas con tu archivo abierto. No se trata de recitar: se trata de mostrar que el análisis es tuyo, aunque parte del código no lo hayas escrito tú.
+
+1. Señala la línea donde decides qué jugadores entran en tu análisis. ¿Qué pasaría si la quitas? Predice antes de ejecutar; luego ejecuta.
+2. ¿Cuántos jugadores quedaron fuera por datos faltantes? ¿Podría cambiar eso tu conclusión?
+3. *(El profesor señala una línea, de preferencia una que haya escrito la IA.)* Explica qué hace sin leer ninguna explicación.
+4. Cambia aquí mismo la media por la mediana (o el umbral, o el grupo). ¿Qué esperas que pase? Ejecuta. ¿Acertaste?
+5. ¿Qué número de tu tabla no presentarías sin una advertencia? ¿Por qué?
+6. Lee tu segunda conclusión. ¿Describe una asociación o afirma una causa? ¿Cómo la reformularías?
+7. ¿Qué parte del código generó una IA? ¿Cómo comprobaste que hacía lo que querías?
+8. Si tuvieras una hora más, ¿qué comprobarías?
+
+**Para quien evalúa.** Señales de que el análisis no es del todo propio: el estudiante no puede explicar una función que usó; los números del texto no coinciden con los de la salida de R; no sabe cuántos jugadores tiene su muestra; las conclusiones dicen cosas que ninguna tabla ni gráfica muestra. Ninguna de estas señales depende de si se usó IA.
+
+---
+
+# 7. Para cerrar el curso
+
+Repasa algunos momentos del curso:
+
+- En la sesión 1, una sola línea (`na.omit()`) dejó fuera a todos los jugadores no elegidos, y el mensaje final seguía hablando de "los jugadores del Combine".
+- En la sesión 2, dos selecciones distintas de "receptores rápidos" dieron casi el mismo porcentaje respondiendo preguntas diferentes, y unos corchetes produjeron 26 filas fantasma sin ningún error.
+- En la sesión 3, rellenar faltantes con ceros invirtió el orden entre la primera ronda y las demás, y un indicador conocido salió a la mitad de su valor por un problema de unidades.
+- En la sesión 4, una gráfica limpia y profesional decía "Velocidad" sobre un eje de tiempos y convertía una diferencia del 1.4% en una del doble.
+
+En ninguno de esos casos el código falló. Lo que permitió ver el problema fue leerlo, saber qué hace cada instrucción y comprobar el resultado contra algo: un conteo, una referencia, una pregunta.
+
+Última pregunta, para responder por escrito en dos o tres líneas: **si una IA puede escribir el código por ti, ¿para qué te sirvió este curso?**
+
+---
+
+# Anexo A. Chuleta de funciones del curso
+
+| Para... | Función | Sesión |
+|---------|---------|--------|
+| Importar un CSV | `read.csv("datos/NFL.csv")` | 1 |
+| Ver tamaño, nombres, tipos, resumen | `dim()`, `names()`, `str()`, `summary()`, `head()` | 1 |
+| Contar valores de una columna | `table()` | 1 |
+| Media, mediana, mínimo, máximo | `mean()`, `median()`, `min()`, `max()` (con `na.rm = TRUE` si hay `NA`) | 1, 3 |
+| Comparar y combinar condiciones | `==`, `!=`, `<`, `<=`, `>`, `>=`, `&`, `|`, `!`, `%in%` | 2 |
+| Detectar faltantes | `is.na()`, `sum(is.na(x))` | 2 |
+| Quedarse con filas o columnas | `filter()`, `select()` | 2 |
+| Ordenar | `arrange()`, `arrange(desc())` | 2 |
+| Crear columnas | `mutate()`, `ifelse()`, `case_when()`, `grepl()` | 3 |
+| Resumir por grupos | `group_by()` + `summarise()`, `n()`, `count()` | 3, 4 |
+| Correlación | `cor(x, y, use = "complete.obs")` | 4 |
+| Gráficas | `ggplot()`, `aes()`, `geom_bar()`, `geom_col()`, `geom_histogram()`, `geom_point()`, `facet_wrap()`, `labs()` | 4 |
+
+---
+
+# Anexo B. Ejemplo resuelto
+
+Un proyecto completo con una pregunta que no está en la lista, para que veas el nivel de detalle esperado. Es un ejemplo, no la única forma de hacerlo.
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver el ejemplo resuelto</summary>
+
+**B.1 Pregunta**
+
+*En lenguaje cotidiano:* cuando evaluamos linieros ofensivos, ¿nos debería importar más el peso o la velocidad?
+
+*En versión precisa:* entre los linieros ofensivos (`C`, `OG`, `OT`) del Combine 2009-2019, ¿qué diferencia más a los elegidos en primera ronda de los demás: el peso o el tiempo en 40 yardas?
+
+**B.2 Lo que esperaba**
+
+Esperaba que los de primera ronda fueran más pesados: para un liniero, el tamaño parece la cualidad más obvia. La velocidad, en cambio, me parecía secundaria para una posición que casi no corre distancias largas.
+
+**B.3 Inspección**
+```
+
+```{r ej-inspeccion, eval = mostrar_sol, echo = mostrar_sol}
+linieros <- jugadores %>%
+  filter(Position_Type == "offensive_lineman")
+
+nrow(linieros)
+table(linieros$Position)
+summary(linieros$Weight)
+sum(is.na(linieros$Sprint_40yd))
+table(linieros$Year[is.na(linieros$Sprint_40yd)])
+```
+
+```{asis, echo = mostrar_sol}
+Hay 555 linieros ofensivos. Todos tienen peso; 26 no tienen tiempo en 40 yardas, y los 26 son de 2017, 2018 o 2019.
+
+**B.4 Selección**
+
+Incluyo a todos los linieros ofensivos. No excluyo a nadie al principio; los 26 sin tiempo quedan fuera solo de los cálculos de velocidad (lo indico en cada tabla y gráfica).
+
+**B.5 Variables derivadas**
+```
+
+```{r ej-variables, eval = mostrar_sol, echo = mostrar_sol}
+linieros <- linieros %>%
+  mutate(peso_lb = Weight * 2.20462,
+         grupo_draft = case_when(
+           Drafted == "No"                       ~ "No elegido",
+           grepl("/ 1st /", Drafted..tm.rnd.yr.) ~ "Primera ronda",
+           TRUE                                  ~ "Rondas 2 a 7"
+         ))
+
+# Comprobaciones de la variable
+table(linieros$grupo_draft)
+table(linieros$Year, linieros$grupo_draft)[, "Primera ronda"]   # nunca más de 32 por año
+range(linieros$peso_lb)                                           # ¿pesos plausibles?
+```
+
+```{asis, echo = mostrar_sol}
+Peso en libras (para hablar en las unidades del cuerpo técnico) y grupo del draft, construido como en la sesión 3. Ningún año tiene más de 9 linieros de primera ronda, y los pesos van de unas 273 a 364 libras: valores razonables para la posición.
+
+**B.6 Resumen por grupos**
+```
+
+```{r ej-resumen, eval = mostrar_sol, echo = mostrar_sol}
+linieros %>%
+  group_by(grupo_draft) %>%
+  summarise(jugadores = n(),
+            peso_medio = mean(peso_lb),
+            peso_mediano = median(peso_lb),
+            con_tiempo = sum(!is.na(Sprint_40yd)),
+            tiempo_medio = mean(Sprint_40yd, na.rm = TRUE),
+            tiempo_mediano = median(Sprint_40yd, na.rm = TRUE))
+```
+
+```{asis, echo = mostrar_sol}
+El peso es prácticamente igual en los tres grupos (unas 312-313 libras de media). El tiempo en 40 yardas no: 5.15 segundos de media en primera ronda, 5.24 en rondas 2 a 7 y 5.31 entre los no elegidos. Con la mediana el orden es el mismo.
+
+**B.7 Visualizaciones**
+```
+
+```{r ej-grafica-1, eval = mostrar_sol, echo = mostrar_sol}
+linieros %>%
+  filter(!is.na(Sprint_40yd)) %>%
+  ggplot(aes(x = peso_lb, y = Sprint_40yd)) +
+  geom_point(alpha = 0.4) +
+  facet_wrap(~ grupo_draft) +
+  labs(title = "Linieros ofensivos: peso y tiempo en 40 yardas",
+       x = "Peso (libras)",
+       y = "Tiempo en 40 yardas (segundos)",
+       caption = "26 linieros sin tiempo (2017-2019) no se incluyen. Combine 2009-2019.")
+```
+
+```{asis, echo = mostrar_sol}
+Los tres grupos ocupan el mismo rango de pesos; los de primera ronda se concentran algo más abajo, es decir, con tiempos menores.
+```
+
+```{r ej-grafica-2, eval = mostrar_sol, echo = mostrar_sol}
+tiempos_posicion <- linieros %>%
+  filter(!is.na(Sprint_40yd)) %>%
+  group_by(Position, grupo_draft) %>%
+  summarise(jugadores = n(),
+            tiempo_medio = mean(Sprint_40yd),
+            .groups = "drop")
+
+tiempos_posicion
+
+ggplot(tiempos_posicion, aes(x = tiempo_medio, y = Position, color = grupo_draft)) +
+  geom_point(size = 3) +
+  labs(title = "Tiempo medio en 40 yardas por posición y grupo del draft",
+       x = "Tiempo medio (segundos; menos es más rápido)",
+       y = "Posición", color = NULL,
+       caption = "C = centro, OG = guardia, OT = tackle. 26 linieros sin tiempo no se incluyen.")
+```
+
+```{asis, echo = mostrar_sol}
+Entre los tackles (`OT`) el orden es claro: primera ronda, rondas 2 a 7, no elegidos. Entre los guardias (`OG`) los no elegidos son más lentos, pero primera ronda y rondas 2 a 7 casi coinciden. Entre los centros (`C`) no hay diferencia, aunque solo 6 centros de primera ronda tienen tiempo registrado.
+
+**B.8 Comprobaciones**
+```
+
+```{r ej-comprobaciones, eval = mostrar_sol, echo = mostrar_sol}
+# 1. Las cuentas cuadran: los tres grupos suman el total
+sum(table(linieros$grupo_draft)) == nrow(linieros)
+
+# 2. ¿Hay más tackles en primera ronda? (composición de cada grupo, en %)
+round(100 * prop.table(table(linieros$grupo_draft, linieros$Position), margin = 1))
+
+# 3. Revisión a mano: los tres linieros más rápidos
+linieros %>%
+  arrange(Sprint_40yd) %>%
+  select(Year, Player, Position, peso_lb, Sprint_40yd, grupo_draft) %>%
+  head(3)
+```
+
+```{asis, echo = mostrar_sol}
+Las cuentas cuadran. La composición sí cambia: dos tercios de los linieros de primera ronda son tackles, frente a menos de la mitad en los otros dos grupos. Por eso la gráfica 2 separa por posición. (`prop.table(..., margin = 1)` calcula porcentajes por fila; es una función que no vimos en clase: la busqué con `?prop.table` y comprobé que cada fila sumara 100.)
+
+**B.9 Alternativa comparada**
+
+Todos los faltantes de tiempo son de 2017 a 2019. ¿Cambia algo si me quedo solo con 2009-2016, donde no falta ningún tiempo?
+```
+
+```{r ej-alternativa, eval = mostrar_sol, echo = mostrar_sol}
+linieros %>%
+  filter(Year <= 2016) %>%
+  group_by(grupo_draft) %>%
+  summarise(jugadores = n(),
+            con_tiempo = sum(!is.na(Sprint_40yd)),
+            peso_medio = mean(peso_lb),
+            tiempo_medio = mean(Sprint_40yd))
+```
+
+```{asis, echo = mostrar_sol}
+Con 2009-2016 el patrón es el mismo (5.16, 5.23 y 5.31 segundos; pesos casi idénticos). Presento la versión con todos los años, que usa más jugadores, y menciono que el resultado no depende de los años con faltantes.
+
+**B.10 Conclusiones**
+
+1. **El peso no distingue a los grupos del draft entre los linieros ofensivos.** Elegidos en primera ronda, en otras rondas y no elegidos pesan, en promedio, unas 312-313 libras (tabla B.6, gráfica 1). Contra lo que esperaba, el tamaño no separa a los grupos; probablemente porque todos los que llegan al Combine ya cumplen con un tamaño mínimo para la posición.
+2. **El tiempo en 40 yardas sí se asocia con el grupo del draft.** Los de primera ronda corrieron en 5.15 segundos de media, frente a 5.24 en rondas 2 a 7 y 5.31 entre los no elegidos (tabla B.6). El resultado se mantiene al quitar los años con faltantes (B.9).
+3. **Parte de esa diferencia depende de la posición.** Dos tercios de los linieros de primera ronda son tackles (B.8). Entre los tackles la diferencia de velocidad es clara; entre los centros no aparece (gráfica 2).
+
+**Recomendación.** Para comparar prospectos de línea ofensiva, el peso por sí solo aporta poco. El tiempo en 40 yardas, sobre todo en tackles, acompaña a la posición en el draft y puede usarse como una señal entre otras, no como criterio de corte.
+
+**B.11 Limitación principal**
+
+Es una asociación, no una causa. No sé si los equipos eligen antes a los linieros más rápidos *por* su velocidad o por otras cualidades que este archivo no registra (rendimiento en la universidad, técnica, lesiones) y que podrían ir de la mano con la velocidad. Además, la primera ronda incluye solo 63 linieros, y 8 centros: las conclusiones por posición son frágiles.
+
+**B.12 Decisiones**
+
+| Decisión | Alternativa que descarté | Por qué elegí esta |
+|----------|--------------------------|--------------------|
+| Tres grupos del draft | Solo elegidos / no elegidos | La pregunta es sobre la primera ronda; con dos grupos se mezcla con el resto |
+| Excluir a los sin tiempo solo de los cálculos de velocidad | Excluirlos de todo | Su peso sí está registrado; no hay razón para quitarlos de la comparación de peso |
+| Media y mediana | Solo la media | Comprobar que el orden no depende de unos pocos valores extremos |
+| Separar por posición en la gráfica 2 | No separar | La composición de los grupos es distinta (B.8) |
+
+**B.13 Tabla de cambios**
+
+| Versión | Qué cambié | Por qué | Efecto en los resultados |
+|---------|------------|---------|--------------------------|
+| v1 | Tabla de peso y tiempo por grupo del draft | Primera respuesta a la pregunta | Peso igual, tiempo distinto |
+| v2 | Agregué la mediana | Comprobar que el orden no dependía de valores extremos | Ninguno: mismo orden |
+| v3 | Agregué la composición por posición y la gráfica 2 | Vi que había más tackles en primera ronda | Matiza la conclusión 2: la diferencia es clara en tackles, no en centros |
+| v4 | Probé quitar 2017-2019 | Todos los faltantes de tiempo eran de esos años | Ninguno: mismo patrón |
+
+**B.14 Registro de uso de IA**
+
+*(Ejemplo ilustrativo de cómo llenarlo.)*
+
+| Qué le pedí | Qué usé de su respuesta | Qué cambié y por qué | Cómo lo comprobé |
+|-------------|-------------------------|----------------------|------------------|
+| "¿Cómo calculo en R el porcentaje de cada posición dentro de cada grupo del draft?" | La función `prop.table()` con `margin = 1` | Agregué `round()` y `100 *` para leerlo en porcentajes | Verifiqué que cada fila sumara 100 y que coincidiera con `table()` hecho a mano para la primera ronda (42 de 63 tackles) |
+
+</details>
+```

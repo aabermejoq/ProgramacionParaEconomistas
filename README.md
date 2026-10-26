@@ -17,4 +17,8 @@ El curso no es exhaustivo, pero sí suficiente para empezar a ser autónomo.
 | 7 y 8 | Limpieza de datos con pandas y uso de APIs | Python |
 | 9 y 10 | Machine Learning aplicado a economía | Python |
 
+## Curso complementario: Programar con criterio en la era de la IA
+
+Cinco sesiones de 90 minutos en R Markdown, para personas que nunca han programado, sobre por qué sigue siendo necesario aprender a programar cuando una IA puede escribir el código: leerlo, detectar sus decisiones, comprobar resultados y responsabilizarse de lo que se presenta. El caso de trabajo son los datos del NFL Scouting Combine (2009-2019). Materiales, datos e instrucciones en [`Curso_Programar_con_IA_NFL/`](Curso_Programar_con_IA_NFL/README.md).
+
 Correo : "aabermejo@tec.mx"

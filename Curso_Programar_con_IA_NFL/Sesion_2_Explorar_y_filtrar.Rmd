@@ -1,0 +1,521 @@
+---
+title: "Sesión 2. La IA también decide qué datos vemos"
+subtitle: "¿Cómo cambia nuestra conclusión cuando elegimos qué jugadores incluir?"
+author: "Programar con criterio en la era de la IA · Caso: NFL Scouting Combine"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+params:
+  soluciones: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##")
+
+# Las soluciones se muestran plegadas. Para generar una versión sin soluciones:
+# rmarkdown::render("Sesion_2_Explorar_y_filtrar.Rmd", params = list(soluciones = FALSE))
+mostrar_sol <- if (exists("params")) isTRUE(params$soluciones) else TRUE
+
+# Ancho de impresión mayor para que las tablas no se corten en el HTML
+options(width = 100)
+```
+
+```{css, echo=FALSE}
+details.solucion { border-left: 4px solid #18bc9c; background: #f4faf8; padding: 0.5em 1em; margin: 1em 0; }
+details.solucion summary { cursor: pointer; font-weight: bold; }
+```
+
+# Antes de empezar
+
+Esta sesión no depende de nada que hayas creado en la sesión 1: el archivo carga sus propios datos. Solo necesitas la carpeta `datos/` con `NFL.csv` junto a este `.Rmd`, y el paquete `dplyr`.
+
+Un **paquete** es un conjunto de funciones adicionales que alguien escribió y publicó para que no tengamos que programarlas desde cero. Se instala **una sola vez** en tu computadora y se carga con `library()` **cada vez** que lo usas. Si no tienes `dplyr`, escribe esto en la consola (no en el documento) y espera a que termine:
+
+```{r, eval=FALSE}
+install.packages("dplyr")
+```
+
+```{r preparacion}
+if (!requireNamespace("dplyr", quietly = TRUE)) {
+  stop("Falta el paquete dplyr. Instálalo desde la consola con install.packages(\"dplyr\").")
+}
+library(dplyr)
+
+ruta_datos <- "datos/NFL.csv"
+if (!file.exists(ruta_datos)) {
+  stop("No encuentro ", ruta_datos, ". La carpeta 'datos' debe estar junto a este .Rmd (ver README).")
+}
+jugadores <- read.csv(ruta_datos)
+
+if (nrow(jugadores) != 3477 || ncol(jugadores) != 18) {
+  warning("Tu NFL.csv no tiene 3,477 filas y 18 columnas: algunas cifras del texto no coincidirán.")
+}
+```
+
+**Organización de la sesión (90 minutos)**
+
+| Minutos | Qué hacemos |
+|---------|-------------|
+| 0–10 | La afirmación del coordinador ofensivo |
+| 10–25 | Comparaciones, condiciones y valores faltantes |
+| 25–45 | Ejemplo guiado: filtrar con `dplyr` |
+| 45–65 | Actividad central: auditar una selección y compararla con la propuesta de una IA |
+| 65–80 | Ejercicio individual: verificar y cambiar una decisión |
+| 80–90 | Cómo decirlo en la reunión y cierre |
+
+---
+
+# 1. El encargo
+
+El coordinador ofensivo tiene una idea muy firme:
+
+> "Los receptores que bajan de 4.4 en las 40 yardas casi siempre terminan elegidos en el draft. Quiero esa cifra para la reunión del jueves."
+
+Parece una pregunta sencilla: filtrar unos jugadores y contar. Pero antes de escribir código conviene notar cuántas cosas no están definidas.
+
+## Ejercicio 1. ¿Qué hay que decidir?
+
+a) Reescribe la afirmación como una pregunta que se pueda responder con los datos.
+
+b) Haz una lista de las decisiones que vas a tener que tomar para responderla. Piensa en: quiénes cuentan como "receptores", qué significa exactamente "bajar de 4.4", qué hacer con los jugadores que no tienen tiempo registrado, y con quién comparar.
+
+c) Anticipa: ¿qué porcentaje de esos receptores rápidos crees que fue elegido? ¿Y de todos los receptores?
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver comentario</summary>
+
+a) Una versión posible: "Entre los receptores que corrieron las 40 yardas en el Combine 2009-2019, ¿qué proporción de los que bajaron de 4.4 segundos fue elegida en el draft, y cómo se compara con la de los que no bajaron de esa marca?".
+
+b) Al menos cuatro decisiones:
+
+- **Quiénes son "receptores".** ¿Solo los *wide receivers* (`WR`)? ¿También los *tight ends* (`TE`), que también reciben pases? No es una pregunta de programación: hay que preguntarle al coordinador qué quiso decir.
+- **El umbral.** ¿"Bajar de 4.4" es `< 4.4` o `<= 4.4`? Los tiempos vienen con dos decimales, así que quien corrió exactamente 4.40 queda dentro o fuera según el símbolo.
+- **Los que no tienen tiempo.** No sabemos si son rápidos o lentos. ¿Los excluimos? ¿Los reportamos aparte?
+- **La comparación.** "Casi siempre" no dice mucho sin un punto de referencia. Si el 85% de los receptores rápidos fue elegido, ¿es mucho? Depende de qué pasó con los demás.
+
+c) Cualquier cifra sirve, siempre que la escribas antes de calcular. La vas a necesitar para saber si el resultado te sorprende.
+</details>
+```
+
+---
+
+# 2. Preguntas de sí o no
+
+## Comparaciones
+
+Para filtrar, R necesita preguntar algo a cada fila y obtener `TRUE` (sí) o `FALSE` (no). Probemos con cuatro tiempos inventados para ver la mecánica:
+
+```{r}
+tiempos <- c(4.38, 4.40, 4.52, NA)
+
+tiempos < 4.4
+tiempos <= 4.4
+tiempos == 4.4
+```
+
+Para cada valor, R contesta la pregunta. El tercer tiempo (4.52) no es menor que 4.4: `FALSE`. El segundo (4.40) no es *menor* que 4.4, pero sí *menor o igual*. Un solo símbolo cambia quién entra.
+
+| Operador | Pregunta |
+|----------|----------|
+| `==` | ¿es igual a? |
+| `!=` | ¿es distinto de? |
+| `<`, `<=` | ¿es menor que?, ¿menor o igual? |
+| `>`, `>=` | ¿es mayor que?, ¿mayor o igual? |
+
+Un error que vas a cometer al menos una vez: escribir `=` cuando quieres preguntar "¿es igual a?". Un solo `=` sirve para otras cosas en R. Para comparar siempre son dos: `==`.
+
+## Combinar condiciones
+
+```{r}
+posiciones <- c("WR", "TE", "RB", "WR")
+
+posiciones == "WR" & tiempos < 4.4      # Y: las dos condiciones a la vez
+posiciones == "WR" | posiciones == "RB" # O: basta con una de las dos
+posiciones %in% c("WR", "RB")           # ¿está en esta lista? (equivale a la anterior)
+!(posiciones == "WR")                   # NO: invierte TRUE y FALSE
+```
+
+## El cuarto valor: `NA`
+
+Fíjate en el último tiempo: es `NA`, un dato que falta. Cuando preguntamos `NA < 4.4`, R responde `NA`. No es un error: es la respuesta honesta. Si no sabemos cuánto tardó un jugador, no sabemos si bajó de 4.4.
+
+Para preguntar si un dato falta se usa `is.na()`. Ojo: `tiempos == NA` **no** funciona, porque comparar con un dato desconocido da otro desconocido.
+
+```{r}
+is.na(tiempos)
+tiempos == NA   # no sirve: todo sale NA
+```
+
+Un truco que usaremos mucho: para R, `TRUE` vale 1 y `FALSE` vale 0. Así que `sum()` de una condición **cuenta** cuántas filas la cumplen, y `mean()` da la **proporción**:
+
+```{r}
+sum(is.na(tiempos))            # cuántos faltan
+sum(tiempos < 4.4)             # NA: no puede contar lo que no sabe
+sum(tiempos < 4.4, na.rm = TRUE)  # ignora los NA: cuenta solo los conocidos
+```
+
+`na.rm = TRUE` significa "quita los `NA` antes de calcular". Es cómodo, pero es una decisión: estás calculando sobre los datos que tienes, no sobre todos los jugadores.
+
+---
+
+# 3. Ejemplo guiado: filtrar con `dplyr`
+
+Practiquemos con una pregunta más sencilla antes de volver a la del coordinador: ¿qué sabemos de los *quarterbacks* (`QB`)?
+
+## `filter()`: quedarse con algunas filas
+
+```{r}
+quarterbacks <- filter(jugadores, Position == "QB")
+nrow(quarterbacks)
+```
+
+`filter()` recibe la tabla y una condición, y devuelve solo las filas donde la condición es `TRUE`. La tabla original `jugadores` no cambia: el resultado es una tabla nueva, que guardamos en `quarterbacks`.
+
+Si escribes `=` en lugar de `==`, `dplyr` te avisa con un mensaje bastante claro:
+
+```{r, error=TRUE}
+filter(jugadores, Position = "QB")
+```
+
+## `select()`: quedarse con algunas columnas
+
+```{r}
+quarterbacks_resumen <- select(quarterbacks, Year, Player, Sprint_40yd, Bench_Press_Reps, Drafted)
+head(quarterbacks_resumen)
+```
+
+## El operador `%>%`: "y después"
+
+Las dos operaciones anteriores se pueden encadenar. `%>%` toma lo que está a su izquierda y lo pasa como primer argumento de la función de la derecha. Se lee "y después":
+
+```{r}
+jugadores %>%
+  filter(Position == "QB") %>%
+  select(Year, Player, Sprint_40yd, Bench_Press_Reps, Drafted) %>%
+  head()
+```
+
+Es exactamente lo mismo que antes, escrito en el orden en que lo piensas: toma `jugadores`, *y después* filtra, *y después* selecciona. En código generado por IA verás a menudo `|>` en lugar de `%>%`. Para lo que hacemos en este curso, funcionan igual.
+
+## Los datos faltantes no están repartidos al azar
+
+¿Cuántos *quarterbacks* hicieron el press de banca?
+
+```{r}
+sum(is.na(quarterbacks$Bench_Press_Reps))
+sum(!is.na(quarterbacks$Bench_Press_Reps))
+```
+
+De 194, solo 11. Si alguien te presenta "la fuerza promedio de los *quarterbacks* del Combine", en realidad está hablando de 11 jugadores, que además no tienen por qué parecerse a los otros 183.
+
+Combinemos condiciones: *quarterbacks* que corrieron las 40 yardas por debajo de 4.6 segundos. `arrange()` ordena las filas según una columna:
+
+```{r}
+jugadores %>%
+  filter(Position == "QB", Sprint_40yd < 4.6) %>%
+  select(Year, Player, Sprint_40yd, Drafted) %>%
+  arrange(Sprint_40yd)
+```
+
+Dentro de `filter()`, separar condiciones con comas equivale a unirlas con `&`.
+
+Por último, ¿en qué años faltan los tiempos de 40 yardas?
+
+```{r}
+sin_tiempo <- filter(jugadores, is.na(Sprint_40yd))
+nrow(sin_tiempo)
+table(sin_tiempo$Year)
+```
+
+De los 174 jugadores sin tiempo, 160 son de 2017, 2018 y 2019. Antes de 2017 casi no faltan. El archivo no explica por qué. Puede haber cambiado la forma de registrar los datos, o puede que más jugadores dejaran de correr en esos años; no lo sabemos. Lo que sí sabemos es que cualquier análisis de la carrera de 40 yardas pierde más jugadores de los últimos tres años que de los primeros.
+
+---
+
+# 4. Actividad central: auditar una selección
+
+## El código que circuló en el equipo
+
+Un compañero respondió a la pregunta del coordinador con este código:
+
+```{r}
+receptores_rapidos <- jugadores %>%
+  filter(Position == "WR", Sprint_40yd < 4.4)
+
+nrow(receptores_rapidos)
+mean(receptores_rapidos$Drafted == "Yes")
+```
+
+Y escribió en el chat del equipo: *"Tenía razón el coordinador: 85% de los receptores rápidos fueron elegidos."*
+
+## Tu tarea (en parejas, unos 10 minutos)
+
+Responde con código, no de memoria:
+
+a) ¿Qué jugadores conserva este filtro?
+
+b) ¿Qué jugadores excluye? Distingue al menos tres grupos de excluidos.
+
+c) ¿Qué pasa con los receptores que no tienen tiempo registrado? ¿Cuántos son? ¿Qué proporción de ellos fue elegida?
+
+d) ¿La selección responde a la pregunta del coordinador? ¿Le falta algo para sostener "casi siempre"?
+
+e) ¿Cómo cambia el resultado si el filtro usa `<=` en lugar de `<`?
+
+Una técnica de comprobación muy útil: **haz que las cuentas cuadren**. Si los receptores rápidos más los no rápidos no suman el total de receptores, alguien se quedó fuera.
+
+```{r}
+# Punto de partida para tus comprobaciones
+todos_receptores <- filter(jugadores, Position == "WR")
+nrow(todos_receptores)
+
+```
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver solución</summary>
+```
+
+```{r sol-auditoria, eval = mostrar_sol, echo = mostrar_sol}
+receptores_no_rapidos <- filter(jugadores, Position == "WR", Sprint_40yd >= 4.4)
+receptores_sin_tiempo <- filter(jugadores, Position == "WR", is.na(Sprint_40yd))
+
+# ¿Cuadran las cuentas?
+nrow(todos_receptores)
+nrow(receptores_rapidos) + nrow(receptores_no_rapidos) + nrow(receptores_sin_tiempo)
+
+# Proporción de elegidos en cada grupo
+mean(todos_receptores$Drafted == "Yes")
+mean(receptores_rapidos$Drafted == "Yes")
+mean(receptores_no_rapidos$Drafted == "Yes")
+mean(receptores_sin_tiempo$Drafted == "Yes")
+
+# e) Con <= en lugar de <
+receptores_rapidos_v2 <- filter(jugadores, Position == "WR", Sprint_40yd <= 4.4)
+nrow(receptores_rapidos_v2)
+mean(receptores_rapidos_v2$Drafted == "Yes")
+```
+
+```{asis, echo = mostrar_sol}
+a) Los 60 jugadores registrados como `WR` que corrieron en menos de 4.40 segundos.
+
+b) Excluye a todos los que no son `WR` (incluidos los *tight ends* y los corredores, que también reciben pases); a los 420 receptores que corrieron en 4.40 o más; y a los 26 receptores sin tiempo registrado. 60 + 420 + 26 = 506: ahora sí cuadran.
+
+c) `filter()` se queda solo con las filas donde la condición es `TRUE`. Para los 26 receptores sin tiempo la condición es `NA`, así que desaparecen sin aviso. De ellos, 12 fueron elegidos (46%). No sabemos si eran rápidos o lentos.
+
+d) El 85% es correcto para la definición que eligió el compañero, pero solo, sin comparación, no dice mucho. Entre los receptores que corrieron 4.40 o más, el 56% fue elegido; entre todos los receptores, el 59%. La diferencia entre 85% y 56% sí apoya la idea del coordinador de que los rápidos son elegidos con más frecuencia. "Casi siempre" es una forma de decirlo; "nueve de los 60 receptores rápidos no fueron elegidos" es otra, con los mismos datos. Además, esto describe una asociación: no dice que correr rápido sea la *razón* por la que los eligieron (volveremos a esto en la sesión 4).
+
+e) Con `<=` entran 72 receptores en lugar de 60: hay 12 que corrieron exactamente 4.40. La proporción de elegidos pasa a 86%. Aquí la conclusión no cambia mucho, pero el número de jugadores sí: si el coordinador pregunta "¿cuántos son?", la respuesta depende de un símbolo.
+</details>
+```
+
+## La propuesta de un asistente de IA
+
+Le planteamos la misma pregunta a un asistente de IA con esta petición:
+
+> "Tengo una tabla `jugadores` con datos del NFL Combine (columnas `Position`, `Position_Type`, `Sprint_40yd`, `Drafted`, entre otras). Quiero saber qué proporción de los receptores que corren las 40 yardas en menos de 4.4 segundos fue elegida en el draft. Escribe el código en R con `dplyr`."
+
+Lo que sigue es el tipo de respuesta que dan estas herramientas. La dejamos fija en el documento para que todos trabajen con el mismo material.
+
+```{r}
+# Filtrar receptores con tiempo registrado y velocidad de élite
+receptores_elite <- jugadores %>%
+  filter(Position_Type == "backs_receivers") %>%
+  filter(!is.na(Sprint_40yd)) %>%
+  filter(Sprint_40yd <= 4.4) %>%
+  select(Player, Year, Position, Sprint_40yd, Drafted)
+
+# Proporción de jugadores seleccionados en el draft
+nrow(receptores_elite)
+mean(receptores_elite$Drafted == "Yes")
+```
+
+Acompañada de esta explicación:
+
+> *"El código filtra a los receptores (`Position_Type == "backs_receivers"`), elimina a los jugadores sin tiempo registrado y conserva a quienes corrieron en menos de 4.4 segundos. Alrededor del 86% de los receptores rápidos fue seleccionado en el draft."*
+
+El resultado se parece al del compañero (86% frente a 85%). Sería fácil concluir que las dos versiones dicen lo mismo. No es así.
+
+## Comparar decisiones, no solo resultados
+
+Completa la tabla. Para la última columna, **cambia una sola decisión a la vez** sobre el código del compañero y mira qué pasa. Si cambias dos cosas al mismo tiempo, no sabrás cuál produjo la diferencia.
+
+| Decisión | Compañero | Asistente de IA | ¿Cambia el resultado? ¿Cuánto? |
+|----------|-----------|-----------------|--------------------------------|
+| Quiénes son "receptores" | | | |
+| Umbral de 4.4 | | | |
+| Jugadores sin tiempo | | | |
+| Columnas que conserva | | | |
+| Grupo de comparación | | | |
+
+Y una pregunta más: ¿la explicación de la IA describe correctamente su propio código?
+
+```{r}
+# Pista: ¿qué posiciones entraron en la selección de la IA?
+table(receptores_elite$Position)
+```
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver solución</summary>
+```
+
+```{r sol-comparacion, eval = mostrar_sol, echo = mostrar_sol}
+# Solo cambia la definición de "receptor" (se mantiene el < del compañero)
+solo_posicion <- filter(jugadores, Position_Type == "backs_receivers", Sprint_40yd < 4.4)
+nrow(solo_posicion)
+mean(solo_posicion$Drafted == "Yes")
+table(solo_posicion$Position)
+
+# Solo cambia el umbral: ya lo calculamos (receptores_rapidos_v2), 72 jugadores
+```
+
+```{asis, echo = mostrar_sol}
+| Decisión | Compañero | Asistente de IA | ¿Cambia el resultado? |
+|----------|-----------|-----------------|------------------------|
+| Quiénes son "receptores" | `Position == "WR"` | `Position_Type == "backs_receivers"`: incluye `RB`, `TE` y `QB` | Sí: con `<` pasan de 60 a 84 jugadores, 23 de ellos corredores |
+| Umbral | `< 4.4` | `<= 4.4` | Sí: 12 receptores corrieron exactamente 4.40 |
+| Sin tiempo | Se excluyen sin decirlo | Se excluyen de forma explícita | No cambia el número: `filter()` ya los quitaba. Pero la versión de la IA hace visible la decisión |
+| Columnas | Todas | Cinco | No afecta al resultado |
+| Comparación | Ninguna | Ninguna | Ninguna de las dos da contexto |
+
+La IA interpretó "receptores" a partir del nombre de la columna `backs_receivers`, que agrupa a corredores, receptores, *tight ends*, *quarterbacks* y *fullbacks*. En su selección final hay 72 `WR`, 32 `RB`, un `TE` y un `QB`. Su explicación, además, dice "en menos de 4.4" cuando el código usa `<=`, y llama "receptores" a un grupo donde casi un tercio son corredores. Ninguna de estas cosas produce un error al ejecutar el código. Solo se ven leyendo.
+
+Lo interesante es que las dos versiones dan casi el mismo porcentaje. Si solo hubiéramos comparado resultados, habríamos concluido que son equivalentes. Responden preguntas distintas que, en este caso, dan cifras parecidas. Con otra pregunta, u otros datos, podrían no coincidir.
+
+Y una decisión que ninguna de las dos versiones tomó: comparar con los receptores más lentos. Un asistente de IA hace lo que le pides; si la petición no menciona un grupo de comparación, normalmente no lo agrega por su cuenta.
+</details>
+```
+
+## Si tienes acceso a una IA
+
+Pega el código del compañero y pregunta:
+
+> "¿Qué decisiones está tomando este código al filtrar los datos? ¿Qué observaciones quedarían excluidas y por qué?"
+
+Luego **comprueba cada afirmación de la respuesta contando filas**. Si dice que se excluyen los jugadores sin tiempo, verifica cuántos son. Si dice que no se excluye a nadie más, verifica que las cuentas cuadren. Las explicaciones de una IA pueden ser correctas, incompletas o equivocadas, y suenan igual de seguras en los tres casos.
+
+Sin IA: la propuesta y la explicación de arriba cumplen la misma función.
+
+---
+
+# 5. Ejercicio individual
+
+Antes de modificar nada, guarda una copia de este archivo como `Sesion_2_v1.Rmd` y trabaja sobre el original. Anota tus cambios en la bitácora del final.
+
+## Ejercicio 2. Los corchetes
+
+Otra compañera, que aprendió R antes de conocer `dplyr`, usa corchetes para filtrar. Este es su código:
+
+```{r}
+rapidos_corchetes <- jugadores[jugadores$Position == "WR" & jugadores$Sprint_40yd < 4.4, ]
+nrow(rapidos_corchetes)
+```
+
+Le salen 86 receptores rápidos, no 60. El código se ejecutó sin errores. ¿Quién tiene razón? Averigua de dónde salen los 26 de diferencia (pista: mira las últimas filas con `tail(rapidos_corchetes)`).
+
+```{r}
+# Tu comprobación
+
+```
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver solución</summary>
+```
+
+```{r sol-corchetes, eval = mostrar_sol, echo = mostrar_sol}
+tail(rapidos_corchetes, 3)
+sum(is.na(rapidos_corchetes$Player))   # filas que no tienen ni siquiera nombre
+
+# Una forma de corregirlo: pedir explícitamente que el tiempo no falte
+rapidos_corchetes_ok <- jugadores[jugadores$Position == "WR" &
+                                  !is.na(jugadores$Sprint_40yd) &
+                                  jugadores$Sprint_40yd < 4.4, ]
+nrow(rapidos_corchetes_ok)
+```
+
+```{asis, echo = mostrar_sol}
+Con corchetes, cuando la condición da `NA` (los 26 receptores sin tiempo), R no descarta la fila: devuelve una fila llena de `NA`, sin nombre, sin posición, sin nada. Por eso `nrow()` dice 86. Si después calculas `mean(rapidos_corchetes$Drafted == "Yes")` obtienes `NA`, y si alguien "arregla" eso con `na.rm = TRUE` volverá a 85%... sin saber que la tabla tenía 26 filas fantasma.
+
+Ninguna de las dos formas está "mal". `filter()` descarta los `NA` en silencio; los corchetes los conservan como filas vacías. Lo que importa es saber qué hace cada una y comprobar el número de filas.
+</details>
+```
+
+## Ejercicio 3. Cambiar una decisión
+
+El coordinador defensivo oye la conversación y pregunta lo mismo para sus *cornerbacks* (`CB`), pero con otro umbral: 4.45 segundos.
+
+a) Calcula cuántos `CB` bajan de 4.45, cuántos no y cuántos no tienen tiempo. Comprueba que las cuentas cuadren.
+
+b) Calcula la proporción de elegidos en cada uno de los tres grupos.
+
+c) Escribe una fila en la bitácora: qué cambiaste respecto al análisis de receptores, por qué, y qué pasó con el resultado.
+
+```{r}
+# Tu código
+
+```
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver solución</summary>
+```
+
+```{r sol-cornerbacks, eval = mostrar_sol, echo = mostrar_sol}
+cb_todos      <- filter(jugadores, Position == "CB")
+cb_rapidos    <- filter(jugadores, Position == "CB", Sprint_40yd < 4.45)
+cb_no_rapidos <- filter(jugadores, Position == "CB", Sprint_40yd >= 4.45)
+cb_sin_tiempo <- filter(jugadores, Position == "CB", is.na(Sprint_40yd))
+
+nrow(cb_todos)
+nrow(cb_rapidos) + nrow(cb_no_rapidos) + nrow(cb_sin_tiempo)
+
+mean(cb_rapidos$Drafted == "Yes")
+mean(cb_no_rapidos$Drafted == "Yes")
+mean(cb_sin_tiempo$Drafted == "Yes")
+```
+
+```{asis, echo = mostrar_sol}
+Hay 393 *cornerbacks*: 117 bajan de 4.45, 265 no, y 11 no tienen tiempo. Fue elegido el 86% de los rápidos, frente al 65% de los demás. Con solo 11 jugadores sin tiempo, el 36% de ese grupo (4 jugadores) es una cifra muy frágil: un jugador más o menos la mueve casi 10 puntos.
+
+Fila de bitácora posible: "v2 · Cambié la posición (WR → CB) y el umbral (4.40 → 4.45) · Lo pidió el coordinador defensivo · 86% de elegidos entre los CB rápidos frente a 65% del resto; la brecha es menor que en receptores (85% frente a 56%)".
+</details>
+```
+
+**Bitácora de cambios**
+
+| Versión | Qué cambié | Por qué | ¿Cambió el resultado? |
+|---------|------------|---------|------------------------|
+| v1 | Versión original | — | — |
+| v2 | | | |
+
+---
+
+# 6. Cómo decirlo en la reunión
+
+Escribe la frase que llevarías a la reunión del jueves. Debe incluir: a quiénes se refiere la cifra, la comparación y quiénes quedaron fuera.
+
+*Mi frase:*
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver un ejemplo</summary>
+
+"De los 480 receptores abiertos (WR) con tiempo registrado en el Combine entre 2009 y 2019, 60 corrieron las 40 yardas en menos de 4.40 segundos. De ellos, 51 (85%) fueron elegidos en el draft, frente al 56% de los que corrieron 4.40 o más. Otros 26 receptores no tienen tiempo registrado y no están en el cálculo. Si se incluyen los que corrieron exactamente 4.40, el grupo sube a 72 jugadores y la proporción a 86%."
+
+Es más larga que "85% de los receptores rápidos fueron elegidos", pero cada parte responde una pregunta que alguien en la reunión podría hacer.
+</details>
+```
+
+## Para cerrar
+
+1. Si en la reunión alguien pregunta "¿y los receptores que no corrieron?", ¿qué le respondes? ¿Cambia algo que la mayoría de los tiempos faltantes sean de 2017 a 2019?
+
+2. La versión de la IA y la del compañero dieron casi el mismo porcentaje. ¿Eso las hace equivalentes? ¿Qué tendrías que comprobar antes de presentar cualquiera de las dos?
+
+**Para la próxima sesión.** Hoy decidimos *sobre quiénes* hablamos. En la sesión 3 vamos a construir indicadores para comparar grupos, y veremos que *cómo* se calcula una cifra puede cambiar tanto como a quién se incluye.

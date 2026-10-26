@@ -1,0 +1,570 @@
+---
+title: "Sesión 1. El código no es magia"
+subtitle: "¿Qué tenemos realmente en nuestros datos sobre los jugadores?"
+author: "Programar con criterio en la era de la IA · Caso: NFL Scouting Combine"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+params:
+  soluciones: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##")
+
+# Las soluciones se muestran plegadas. Para generar una versión sin soluciones:
+# rmarkdown::render("Sesion_1_Primeros_pasos.Rmd", params = list(soluciones = FALSE))
+mostrar_sol <- if (exists("params")) isTRUE(params$soluciones) else TRUE
+
+# Ancho de impresión mayor para que las tablas no se corten en el HTML
+options(width = 100)
+```
+
+```{css, echo=FALSE}
+details.solucion { border-left: 4px solid #18bc9c; background: #f4faf8; padding: 0.5em 1em; margin: 1em 0; }
+details.solucion summary { cursor: pointer; font-weight: bold; }
+```
+
+# Antes de empezar
+
+Este archivo es un R Markdown: mezcla texto y bloques de código (*chunks*). Puedes leerlo como un documento y, al mismo tiempo, ejecutar cada bloque para ver qué hace.
+
+- Para ejecutar una línea: coloca el cursor en ella y presiona `Ctrl + Enter` (en Mac, `Cmd + Enter`).
+- Para ejecutar un bloque completo: haz clic en el triángulo verde de su esquina superior derecha.
+- Para generar el documento HTML completo: botón **Knit**. La primera vez, RStudio puede pedirte instalar el paquete `rmarkdown`; acepta.
+
+Debajo de algunos ejercicios hay un recuadro **Ver solución**. Ábrelo después de intentarlo, no antes: el ejercicio está pensado para que te equivoques un poco.
+
+Para esta sesión no hace falta instalar nada más: todo lo que usaremos viene con R.
+
+**Organización de la sesión (90 minutos)**
+
+| Minutos | Qué hacemos |
+|---------|-------------|
+| 0–10 | El encargo del equipo de scouting |
+| 10–25 | R como calculadora: instrucciones, objetos, resultados y comentarios |
+| 25–45 | Qué es una tabla de datos; importar `NFL.csv` y mirarlo por dentro |
+| 45–65 | Actividad central: dos soluciones para la misma pregunta |
+| 65–80 | Ejercicio individual y primera bitácora de cambios |
+| 80–90 | Qué sabemos, qué no sabemos y cierre |
+
+---
+
+# 1. El encargo
+
+Trabajas como analista en el departamento de scouting de un equipo de la NFL. Faltan pocas semanas para el draft y el jefe de scouting te manda un archivo, `NFL.csv`, con un mensaje corto:
+
+> "Aquí están los resultados del Combine de 2009 a 2019. Antes de comparar a nadie, quiero saber qué tenemos en este archivo y qué tan confiable es. No me digas solo cuántas filas tiene."
+
+Si no sigues el fútbol americano, esto es lo único que necesitas saber. Cada año, antes del **draft** (el proceso en el que los equipos eligen jugadores salidos de la universidad), la NFL reúne a varios cientos de prospectos en el **Combine** y les aplica las mismas pruebas: una carrera de 40 yardas, salto vertical, salto largo, repeticiones en press de banca y dos pruebas de agilidad (tres conos y *shuttle*). El draft tiene siete rondas; un jugador que no es elegido puede intentar firmar después con algún equipo, pero no aparece como elegido.
+
+## Ejercicio 1. Definir y anticipar (sin computadora)
+
+Antes de abrir el archivo, escribe en una hoja o aquí mismo:
+
+a) En una frase y sin tecnicismos, ¿qué te está pidiendo el jefe de scouting?
+
+b) Tres cosas que esperas encontrar en el archivo.
+
+c) Una cifra que puedas anticipar. Por ejemplo, ¿cuánto crees que pesa un jugador típico del Combine? ¿Cuántos jugadores habrá por año?
+
+*Tus respuestas:*
+
+a)
+
+b)
+
+c)
+
+Guarda esas respuestas. Al final de la sesión las vamos a contrastar con lo que encontremos.
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver comentario</summary>
+
+No hay una respuesta única. Lo importante del inciso a) es que el encargo no es "abrir el archivo", sino **describir qué información hay y qué limitaciones tiene**. Una versión razonable: "Quiere saber qué variables tenemos de cada jugador, cuántos jugadores y años cubre el archivo, y si hay huecos o cosas raras que debamos tener en cuenta antes de comparar prospectos".
+
+Anticipar una cifra, aunque sea a ojo, sirve para detectar resultados absurdos. Si esperabas que un jugador pesara unos 100 kg y R te devuelve 1,000, sabes que algo falló antes de presentarlo.
+</details>
+```
+
+---
+
+# 2. R como calculadora
+
+## Instrucciones, resultados y comentarios
+
+La carrera del Combine mide 40 yardas. ¿Cuántos metros son? Una yarda equivale a 0.9144 metros:
+
+```{r}
+40 * 0.9144
+```
+
+Ahí ya hay dos piezas distintas. La **instrucción** es lo que escribiste (`40 * 0.9144`). El **resultado** es lo que R contesta (`36.576`). R mostró el resultado y lo olvidó: si lo necesitas más adelante, tendrías que volver a calcularlo.
+
+## Objetos: guardar un resultado con nombre
+
+Para conservar un resultado lo guardamos en un **objeto**, con el operador `<-` (se lee "asigna"):
+
+```{r}
+distancia_m <- 40 * 0.9144   # una yarda mide 0.9144 m
+tiempo_s <- 4.38             # un tiempo real del Combine 2009
+
+velocidad_ms <- distancia_m / tiempo_s
+velocidad_ms
+```
+
+Al asignar, R no muestra nada; solo guarda. Para ver el contenido de un objeto escribes su nombre. Fíjate también en el panel **Environment** de RStudio: ahí aparecen los objetos que has creado.
+
+¿Esa velocidad es mucho o poco? En metros por segundo cuesta imaginarlo. Pasemos a kilómetros por hora:
+
+```{r}
+# 1 m/s equivale a 3.6 km/h (3,600 segundos en una hora / 1,000 metros en un km)
+velocidad_ms * 3.6
+```
+
+Unos 30 km/h de promedio en la carrera, saliendo desde cero.
+
+Nota sobre los comentarios: todo lo que va después de `#` es un **comentario**. R lo ignora; es para las personas. Un buen comentario explica *por qué* o *de dónde sale* algo (el 3.6, el 0.9144). Un comentario como `# multiplica por 3.6` no aporta nada: eso ya lo dice el código.
+
+| Pieza | Ejemplo | Qué es |
+|-------|---------|--------|
+| Instrucción | `velocidad_ms * 3.6` | Lo que le pides a R |
+| Objeto | `velocidad_ms` | Un valor guardado con nombre, que puedes reutilizar |
+| Resultado | `30.06...` | Lo que R devuelve al ejecutar una instrucción |
+| Comentario | `# 1 m/s equivale a 3.6 km/h` | Una explicación para quien lee el código |
+
+## R no adivina
+
+R distingue mayúsculas de minúsculas y no corrige nombres mal escritos:
+
+```{r, error=TRUE}
+Velocidad_ms
+```
+
+El mensaje `object 'Velocidad_ms' not found` (si tu R está en español, `objeto 'Velocidad_ms' no encontrado`) significa exactamente eso: no existe ningún objeto con ese nombre. No es que R "no entienda"; es que hace literalmente lo que le pides. Esa literalidad es una ventaja: si el código hace algo, es porque alguien lo escribió así.
+
+## Varias cifras a la vez: vectores
+
+La función `c()` junta varios valores en un **vector**:
+
+```{r}
+tiempos_40 <- c(4.38, 4.84, 5.50, 4.49)
+
+length(tiempos_40)   # cuántos valores tiene
+mean(tiempos_40)     # el promedio
+min(tiempos_40)
+```
+
+Retén esta idea: **una columna de una tabla de datos es un vector**. Todo lo que hagas con `tiempos_40` lo podrás hacer después con una columna de 3,477 jugadores.
+
+## Ejercicio 2. Predice y luego calcula
+
+Un liniero ofensivo de unos 165 kg corrió las 40 yardas en 5.50 segundos.
+
+a) Antes de ejecutar nada, ¿su velocidad promedio fue mayor o menor que los 30 km/h del ejemplo? ¿Cuánto crees?
+
+b) Calcula su velocidad en km/h guardando el resultado en un objeto llamado `velocidad_liniero_kmh`.
+
+```{r}
+# Escribe aquí tu código
+
+```
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver solución</summary>
+```
+
+```{r sol-ej2, eval = mostrar_sol, echo = mostrar_sol}
+velocidad_liniero_kmh <- (40 * 0.9144) / 5.50 * 3.6
+velocidad_liniero_kmh
+```
+
+```{asis, echo = mostrar_sol}
+Unos 24 km/h: más lento, como era de esperar si tardó más en recorrer la misma distancia. Si tu resultado hubiera salido mayor que 30, eso debería hacerte sospechar antes de revisar el código: es justo para eso que sirve anticipar.
+
+Otra forma igual de válida es reutilizar el objeto que ya tenías: `distancia_m / 5.50 * 3.6`.
+</details>
+```
+
+---
+
+# 3. ¿Qué es una tabla de datos?
+
+Una tabla de datos (en R, un *data frame*) organiza la información así:
+
+- cada **fila** es una observación (aquí, un jugador);
+- cada **columna** es una variable (peso, posición, tiempo...);
+- dentro de una columna, todos los valores son del mismo tipo: números o texto, pero no mezclados.
+
+Construyamos una a mano con tres jugadores reales del archivo:
+
+```{r}
+mini_tabla <- data.frame(
+  jugador  = c("Beanie Wells", "Will Davis", "Herman Johnson"),
+  posicion = c("RB", "DE", "OG"),
+  peso_kg  = c(106.6, 118.4, 165.1),
+  tiempo_40 = c(4.38, 4.84, 5.50)
+)
+
+mini_tabla
+```
+
+El símbolo `$` saca una columna de la tabla. Lo que obtienes es un vector, y con él funciona todo lo anterior:
+
+```{r}
+mini_tabla$peso_kg
+mean(mini_tabla$peso_kg)
+```
+
+`NFL.csv` es exactamente esto, pero con 3,477 filas y 18 columnas.
+
+---
+
+# 4. Importar `NFL.csv` y mirarlo por dentro
+
+## Dónde debe estar el archivo
+
+El curso supone esta organización de carpetas (ver `README.md`):
+
+```
+Curso_Programar_con_IA_NFL/
+├── Sesion_1_Primeros_pasos.Rmd   <- este archivo
+├── ...
+└── datos/
+    └── NFL.csv
+```
+
+Cuando ejecutas un R Markdown, R busca los archivos **a partir de la carpeta donde está el `.Rmd`**. Por eso escribimos la ruta relativa `"datos/NFL.csv"` y no algo como `"C:/Users/ana/Descargas/NFL.csv"`, que solo funcionaría en una computadora.
+
+Antes de importar, comprobemos que R encuentra el archivo:
+
+```{r}
+file.exists("datos/NFL.csv")
+```
+
+Si te sale `FALSE`, el archivo no está donde R lo busca. Revisa que la carpeta se llame `datos` (sin acento ni mayúscula), que `NFL.csv` esté dentro y que este `.Rmd` esté en la carpeta de arriba. Si ejecutas código desde la consola, puede que la consola esté "parada" en otra carpeta: usa *Session > Set Working Directory > To Source File Location*.
+
+## Importar
+
+```{r}
+jugadores <- read.csv("datos/NFL.csv")
+```
+
+`read.csv()` lee el archivo y nosotros guardamos la tabla en un objeto llamado `jugadores`. No se ve nada porque solo asignamos. Una comprobación mínima: el archivo con el que se preparó este curso tiene 3,477 filas y 18 columnas. Si el tuyo no, es otra versión y algunas cifras del texto no coincidirán. No te preocupes por la sintaxis del `if`; se lee así: "si el número de filas es distinto (`!=`) de 3,477 o (`||`) el de columnas es distinto de 18, avisa".
+
+```{r}
+if (nrow(jugadores) != 3477 || ncol(jugadores) != 18) {
+  warning("Tu NFL.csv no tiene 3,477 filas y 18 columnas: puede ser otra versión del archivo.")
+}
+```
+
+## Cinco funciones para mirar una tabla
+
+### `head()`: las primeras filas
+
+```{r}
+head(jugadores, 3)
+```
+
+Lo primero que llama la atención: la columna `Player` trae el nombre seguido de una diagonal invertida y un código, como `Beanie Wells\WellCh00`. Al imprimir, R muestra la diagonal duplicada (`\\`); en el archivo hay una sola. El código parece un identificador del sitio de origen de los datos, pero el archivo no lo explica: es algo que **no sabemos todavía**.
+
+### `dim()`, `nrow()`, `ncol()`: el tamaño
+
+```{r}
+dim(jugadores)
+```
+
+### `names()`: los nombres de las columnas
+
+```{r}
+names(jugadores)
+```
+
+Casi todos los nombres se entienden. Uno no: `Drafted..tm.rnd.yr.`. Por sus valores (lo vimos en `head()`), contiene el equipo, la ronda, el número de selección y el año del draft, separados por `/`.
+
+### `str()`: el tipo de cada columna
+
+```{r}
+str(jugadores)
+```
+
+`int` son números enteros, `num` números con decimales y `chr` texto. Que `Drafted` sea texto (`"Yes"`/`"No"`) y no un número es una decisión de quien armó el archivo, y más adelante condiciona cómo trabajamos con esa columna.
+
+### `summary()`: un resumen de cada columna
+
+```{r}
+summary(jugadores)
+```
+
+`summary()` es probablemente la función más útil de hoy. Lee dos cosas en ella:
+
+1. **Los rangos.** El archivo no dice en qué unidades están las medidas, pero los rangos lo delatan. Una estatura entre 1.65 y 2.08 solo tiene sentido en metros; un peso entre 67.6 y 167.4, en kilogramos; un salto vertical entre 44 y 114, en centímetros. Los tiempos (`Sprint_40yd`, `Agility_3cone`, `Shuttle`) están en segundos.
+
+2. **Los `NA's`.** `NA` significa *Not Available*: el dato falta. Hay 174 jugadores sin tiempo en las 40 yardas, 905 sin press de banca, 1,217 sin la prueba de tres conos y 550 sin edad. El archivo no dice por qué faltan.
+
+## Verificar en lugar de suponer
+
+Dijimos que la estatura está en metros. Podemos ir un paso más allá. En la NFL la estatura se mide en pulgadas (1 pulgada = 0.0254 m). Si dividimos entre 0.0254 y salen números enteros, sabremos que alguien midió en pulgadas y luego convirtió a metros:
+
+```{r}
+head(jugadores$Height / 0.0254, 10)
+table(jugadores$Height)
+```
+
+Salen enteros, y en todo el archivo solo hay 18 estaturas distintas. Esto, que parece un detalle, va a importar en la sesión 4, cuando hagamos gráficas.
+
+`table()` cuenta cuántas veces aparece cada valor. Úsala con columnas que tengan pocos valores distintos:
+
+```{r}
+table(jugadores$Year)
+table(jugadores$Drafted)
+```
+
+---
+
+# 5. Actividad central: dos soluciones para la misma pregunta
+
+El jefe de scouting hace una pregunta concreta:
+
+> "¿Cuánto pesan, en promedio, los jugadores que llegan al Combine? Dámelo en libras, que aquí nadie habla en kilos."
+
+## Paso 1. Anticipa
+
+Con lo que viste en `summary()`, ¿cuánto debería dar, aproximadamente, en libras? (1 kg ≈ 2.20462 lb). Escribe tu estimación antes de seguir:
+
+*Mi estimación:*
+
+## Paso 2. La solución del profesor
+
+```{r}
+peso_medio_kg <- mean(jugadores$Weight)
+peso_medio_kg * 2.20462
+```
+
+## Paso 3. La propuesta de un asistente de IA
+
+Le hicimos la misma pregunta a un asistente de IA, tal cual la formuló el jefe de scouting. Lo que sigue es el tipo de código que suelen devolver estas herramientas; lo dejamos fijo en el documento para que todos trabajen con el mismo material, tengan o no acceso a una IA.
+
+```{r}
+# Eliminar valores faltantes para evitar errores en los cálculos
+datos_limpios <- na.omit(jugadores)
+
+# Convertir el peso de kilogramos a libras (1 kg = 2.20462 lb)
+datos_limpios$Weight_lb <- datos_limpios$Weight * 2.20462
+
+# Calcular estadísticas descriptivas del peso
+estadisticas_peso <- c(
+  media    = mean(datos_limpios$Weight_lb),
+  mediana  = median(datos_limpios$Weight_lb),
+  desv_est = sd(datos_limpios$Weight_lb)
+)
+
+# Mostrar los resultados
+print(round(estadisticas_peso, 1))
+cat("El peso promedio de los jugadores del Combine es de",
+    round(estadisticas_peso["media"], 1), "libras.\n")
+```
+
+El código funciona, está comentado y la presentación es más cuidada que la del profesor. Pero las dos soluciones no dan lo mismo.
+
+## Paso 4. Lee antes de juzgar
+
+Trabaja en parejas, unos 15 minutos.
+
+a) Para cada línea de la propuesta de la IA, escribe con tus palabras qué hace. Si hay una función que no conoces, búscala con `?nombre_de_la_funcion` en la consola (por ejemplo, `?na.omit`).
+
+b) ¿Cuántas libras da cada solución? ¿Cuál se acerca más a tu estimación?
+
+c) ¿De dónde sale la diferencia? Estas instrucciones te ayudan a averiguarlo:
+
+```{r, eval=FALSE}
+nrow(jugadores)
+nrow(datos_limpios)
+table(datos_limpios$Drafted)
+table(datos_limpios$Position_Type)
+```
+
+d) ¿Qué pregunta responde realmente la solución de la IA? Reescríbela en una frase.
+
+e) ¿Cuál de las dos soluciones entiendes mejor? ¿Cuál presentarías al jefe de scouting y por qué?
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver solución</summary>
+```
+
+```{r sol-actividad, eval = mostrar_sol, echo = mostrar_sol}
+nrow(jugadores)
+nrow(datos_limpios)
+nrow(jugadores) - nrow(datos_limpios)   # filas que desaparecieron
+table(datos_limpios$Drafted)
+table(datos_limpios$Position_Type)
+```
+
+```{asis, echo = mostrar_sol}
+**Qué hace cada línea.** `na.omit()` elimina toda fila que tenga al menos un `NA` en *cualquier* columna. La segunda línea crea una columna nueva con el peso en libras. `c(media = ..., mediana = ..., desv_est = ...)` arma un vector con nombres. `round(..., 1)` redondea a un decimal. `cat()` imprime un mensaje de texto.
+
+**La diferencia.** La solución del profesor da unas 241.9 libras; la de la IA, 249.5. La columna `Weight` no tiene ningún `NA`, así que eliminar faltantes no era necesario para este cálculo. Sin embargo, `na.omit()` revisa *todas* las columnas y deja solo 1,179 de los 3,477 jugadores. Desaparecen 2,298.
+
+¿Quiénes se quedan? Solo jugadores elegidos en el draft: la columna `Drafted..tm.rnd.yr.` está vacía (`NA`) para todos los no elegidos, así que ninguno sobrevive. Tampoco queda ningún pateador ni despejador (`kicking_specialist`), porque casi ninguno hace todas las pruebas, y queda un solo *quarterback* (`QB`), porque los mariscales casi nunca hacen el press de banca.
+
+**Qué pregunta responde la IA.** "¿Cuánto pesan, en promedio, los jugadores que fueron elegidos en el draft y que tienen registradas todas las pruebas y la edad?". Es una pregunta legítima, pero no es la que hizo el jefe de scouting. Y el mensaje final ("el peso promedio de los jugadores del Combine") es falso para ese subconjunto.
+
+**Cuál presentar.** La del profesor responde la pregunta y se puede explicar en dos frases. La de la IA no tiene ningún error de programación: hace exactamente lo que dice su código. El problema es una decisión (eliminar faltantes "por si acaso") tomada sin relación con la pregunta, y que solo se descubre leyendo y comprobando. Observa también el comentario de la IA: "para evitar errores en los cálculos". Suena razonable, pero omite lo más importante, que se pierden dos tercios de la tabla. Las explicaciones de una IA también hay que comprobarlas.
+</details>
+```
+
+## Si tienes acceso a una IA
+
+Prueba a pedirle lo mismo, pero acotando lo que sabes:
+
+> "Escribe una solución sencilla en R para calcular el peso promedio en libras de todos los jugadores de la tabla `jugadores` (columna `Weight`, en kilogramos). Explica cada instrucción y evita funciones que todavía no conozco: solo he usado `<-`, `mean()`, `head()`, `dim()`, `names()`, `str()`, `summary()`, `table()` y `$`."
+
+Después pregúntale: *"¿Tu código elimina alguna fila? ¿Cuántas?"*, y comprueba su respuesta tú mismo con `nrow()`. Compara lo que obtengas con las dos soluciones de arriba.
+
+Sin IA, el ejercicio es el mismo: la propuesta incluida en este documento cumple ese papel.
+
+---
+
+# 6. Guardar versiones: la primera bitácora
+
+Hasta ahora todo lo que hiciste funciona. En el ejercicio siguiente vas a modificar código. Antes de hacerlo:
+
+1. Guarda una copia de este archivo con un nombre que diga qué es: `Sesion_1_v1_funciona.Rmd`. Sigue trabajando en el original.
+2. Cada vez que hagas un cambio que importe, anótalo en la bitácora de abajo: qué cambiaste, por qué y si cambió el resultado.
+
+No es burocracia. Dentro de una semana no vas a recordar por qué una cifra pasó de 242 a 231, y la persona que reciba tu análisis tampoco lo va a saber si no lo escribes. Y si una modificación (tuya o propuesta por una IA) estropea algo, la copia te permite volver a una versión que sí funcionaba.
+
+La otra mitad de la idea es la **reproducibilidad**: si alguien recibe tu carpeta (el `.Rmd` y `datos/NFL.csv`) y hace Knit, debe obtener exactamente las mismas cifras que tú. Por eso usamos rutas relativas, cargamos los datos dentro del propio documento y no dependemos de cosas que hicimos a mano en la consola.
+
+**Bitácora de cambios**
+
+| Versión | Qué cambié | Por qué | ¿Cambió el resultado? |
+|---------|------------|---------|------------------------|
+| v1 | Versión original de la sesión | — | — |
+| v2 | | | |
+
+---
+
+# 7. Ejercicio individual
+
+## Ejercicio 3. Modificar la solución del profesor
+
+Usa la solución del profesor como punto de partida.
+
+a) Calcula la estatura promedio de los jugadores en centímetros y en pulgadas.
+
+b) Calcula la **mediana** del peso en libras con `median()`. ¿Es mayor o menor que el promedio? ¿Por qué crees que no coinciden?
+
+c) Anota en la bitácora el cambio que hiciste en b) y si cambió el resultado.
+
+```{r}
+# a)
+
+
+# b)
+
+```
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver solución</summary>
+```
+
+```{r sol-ej3, eval = mostrar_sol, echo = mostrar_sol}
+# a) La estatura está en metros
+mean(jugadores$Height) * 100      # centímetros
+mean(jugadores$Height) / 0.0254   # pulgadas
+
+# b) Mediana del peso en libras
+median(jugadores$Weight) * 2.20462
+```
+
+```{asis, echo = mostrar_sol}
+a) Unos 187.4 cm, o 73.8 pulgadas (casi 6 pies y 2 pulgadas).
+
+b) La mediana (231 libras) es menor que el promedio (241.9). La mediana es el valor que deja a la mitad de los jugadores por debajo y a la mitad por encima; el promedio, en cambio, se deja arrastrar por los valores grandes. Aquí hay un grupo de jugadores muy pesados (los linieros, que superan con frecuencia las 300 libras) que sube el promedio. Ninguna de las dos cifras es "la correcta": describen cosas distintas. En la sesión 3 volveremos a esto.
+
+Una fila razonable para la bitácora: "v2 · Cambié `mean()` por `median()` en el peso · Para ver si unos pocos jugadores muy pesados movían el promedio · Sí: de 241.9 a 231.0 libras".
+</details>
+```
+
+## Ejercicio 4. La ficha del archivo
+
+Con las funciones de hoy (`dim()`, `names()`, `str()`, `summary()`, `table()`), responde. Escribe el código que usaste para cada respuesta.
+
+a) ¿Qué años cubre el archivo? ¿Cuántos jugadores hay por año? ¿Algún año se ve distinto a los demás?
+
+b) ¿Cuántos jugadores fueron elegidos en el draft y cuántos no?
+
+c) ¿Qué prueba tiene más datos faltantes?
+
+d) ¿El nombre del jugador sirve para identificarlo sin ambigüedad? Pista: prueba `sum(jugadores$Player == "Chris Jones")`. El `==` pregunta "¿es igual a?" para cada fila; lo veremos con calma en la sesión 2.
+
+```{r}
+# Tu código
+
+```
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver solución</summary>
+```
+
+```{r sol-ej4, eval = mostrar_sol, echo = mostrar_sol}
+table(jugadores$Year)                    # a)
+table(jugadores$Drafted)                 # b)
+# c) No hace falta código nuevo: basta leer la fila NA's del summary() de la sección 4
+sum(jugadores$Player == "Chris Jones")   # d)
+```
+
+```{asis, echo = mostrar_sol}
+a) De 2009 a 2019. Entre 2009 y 2017 hay entre 322 y 333 jugadores por año; 2018 tiene 308 y 2019 solo 220. Con este archivo no podemos saber si en 2019 participaron menos jugadores o si el archivo está incompleto. Antes de comparar años habría que averiguarlo en la fuente original.
+
+b) 2,254 elegidos (`Yes`) y 1,223 no elegidos (`No`).
+
+c) `Agility_3cone` (tres conos), con 1,217 faltantes, seguida de `Shuttle` (1,140) y `Bench_Press_Reps` (905).
+
+d) No. Hay dos filas con el nombre exacto "Chris Jones" (sin código), y otras dos con "Chris Jones" seguido de códigos distintos. Son cuatro personas diferentes. Si algún día tuvieras que unir esta tabla con otra usando el nombre, mezclarías jugadores.
+</details>
+```
+
+---
+
+# 8. Lo que sabemos y lo que todavía no sabemos
+
+Vuelve a tu Ejercicio 1. ¿Acertaste el peso típico? ¿Esperabas tantos datos faltantes?
+
+Ahora completa esta tabla. Es la respuesta que le darías al jefe de scouting.
+
+| Lo que sabemos del archivo | Lo que todavía no sabemos |
+|----------------------------|---------------------------|
+| | |
+| | |
+| | |
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Ver un ejemplo</summary>
+
+**Lo que sabemos.** 3,477 jugadores y 18 variables; años 2009 a 2019; medidas en sistema métrico (deducido de los rangos y comprobado con la estatura); 2,254 elegidos y 1,223 no elegidos; varias pruebas tienen muchos faltantes; el nombre no identifica de forma única a un jugador.
+
+**Lo que no sabemos.** Por qué faltan datos (¿el jugador no hizo la prueba?, ¿se lesionó?, ¿no se registró?); si el archivo incluye a todos los participantes de cada año (2019 se ve incompleto); qué significa exactamente `Age` (¿edad en el Combine?, ¿en el draft?); qué es el código que acompaña a algunos nombres. Algunas de estas preguntas se pueden explorar con R; otras requieren consultar la fuente original de los datos.
+</details>
+```
+
+## Para cerrar
+
+Dos preguntas para discutir en grupo:
+
+1. Si mañana tuvieras que decir en una reunión "el prospecto típico del Combine pesa unas 242 libras", ¿qué tendrías que haber comprobado antes?
+
+2. En la actividad central, ejecutar el código de la IA sin leerlo te habría dado una cifra con buena presentación y un mensaje seguro de sí mismo. ¿Cómo te habrías dado cuenta de que respondía otra pregunta?
+
+**Para la próxima sesión.** Hoy vimos que una sola instrucción (`na.omit()`) cambió de quiénes estábamos hablando. En la sesión 2 vamos a elegir a propósito qué jugadores incluir y a revisar qué pasa con los que quedan fuera.
