@@ -175,7 +175,7 @@ Tres advertencias que ya viviste en el curso:
 
 # 4. Elige una pregunta
 
-Elige una de estas preguntas o propón una propia (consúltala con el profesor en los primeros minutos). Las pistas señalan dónde suele haber problemas, no cuál es la respuesta.
+Elige una de estas preguntas o propón una propia, siempre que se pueda responder con las columnas de `NFL.csv` y quepa en el tiempo de la sesión. Las pistas señalan dónde suele haber problemas, no cuál es la respuesta.
 
 **A. Receptores y salto vertical.** Entre los receptores abiertos (`WR`), ¿el salto vertical distingue a los elegidos de los no elegidos? ¿Y a los de primera ronda?
 *Pistas:* `Vertical_Jump` está en centímetros. 74 receptores no tienen salto vertical registrado.
@@ -391,7 +391,7 @@ En los últimos minutos, el profesor (o un compañero, con esta lista) te hará 
 
 ## Paso 1. Revisa la estructura final
 
-Tu repositorio debería verse así (los nombres de tus tareas pueden variar ligeramente si el profesor lo autorizó):
+Tu repositorio debería verse así (los nombres de tus archivos de tarea pueden variar ligeramente; lo importante es que cada uno esté en la carpeta de su sesión):
 
 ```
 curso-programacion-r/
@@ -435,7 +435,7 @@ En `sesion-5/notas.md` escribe, como en las tareas anteriores, las cinco partes:
 
 ## Paso 5. Comparte los enlaces
 
-Envía, por el medio que indique el profesor, el enlace a tu repositorio y el enlace al commit final. Si tu repositorio es privado, comprueba que el profesor sigue invitado (**Settings > Collaborators**).
+Pega en la actividad «Proyecto final» de la plataforma del curso el enlace a tu repositorio y el enlace al commit final. Antes, abre los dos en una ventana privada del navegador para confirmar que tu repositorio sigue siendo público y que los enlaces funcionan.
 
 ## Lista de comprobación final
 
@@ -446,7 +446,7 @@ Envía, por el medio que indique el profesor, el enlace a tu repositorio y el en
 - [ ] Evalué la sugerencia de quedarme solo con jugadores con las seis pruebas y justifiqué mi decisión con conteos.
 - [ ] El historial muestra los cambios principales con mensajes claros.
 - [ ] No hay contraseñas, tokens ni datos personales innecesarios.
-- [ ] Envié el enlace al repositorio y el enlace al commit final.
+- [ ] Pegué en la actividad «Proyecto final» de la plataforma del curso el enlace al repositorio y el enlace al commit final.
 
 ---
 
