@@ -1,0 +1,954 @@
+---
+title: "Sesión 1. De los datos del Combine a una base de análisis"
+subtitle: "¿Qué características de un jugador permiten pronosticar su éxito en la NFL?"
+author: "Programar con criterio en la era de la IA · Proyecto: pronosticar el éxito en la NFL"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##",
+                      fig.width = 8, fig.height = 4.5, fig.align = "center")
+
+# Ancho de impresión mayor para que las tablas no se corten en el HTML
+options(width = 100)
+
+# Compilar siempre desde la carpeta de este archivo, aunque RStudio tenga configurado
+# otro directorio en Knit > Knit Directory. Así funcionan las rutas relativas.
+if (!is.null(knitr::current_input())) {
+  knitr::opts_knit$set(root.dir = dirname(knitr::current_input(dir = TRUE)))
+}
+```
+
+```{css, echo=FALSE}
+.tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
+.ia { border-left: 4px solid #eb6834; background: #fdf5f1; padding: 0.6em 1em; margin: 1em 0; }
+.aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
+.jugar { border: 2px dashed #2a78d6; border-radius: 8px; padding: 0.6em 1em; margin: 1.2em 0; }
+.normal { border-left: 4px solid #1baf7a; background: #f1faf6; padding: 0.6em 1em; margin: 1em 0; }
+.mensaje { font-size: 1.2em; color: #104281; border-left: 5px solid #104281; padding: 0.3em 1em; margin: 1.2em 0; }
+.cifras { display: flex; flex-wrap: wrap; gap: 0.8em; margin: 1.2em 0; }
+.cifra { flex: 1 1 140px; background: #f3f7fd; border-radius: 8px; padding: 0.7em 0.9em; }
+.cifra p { margin: 0; }
+.num { display: block; font-size: 1.9em; font-weight: 700; color: #104281; line-height: 1.15; }
+.lab { display: block; font-size: 0.9em; color: #52514e; }
+.chat-usuario { background: #eef2f7; border-radius: 14px 14px 4px 14px; padding: 0.6em 1em; margin: 1em 0 1em 12%; }
+.chat-ia { background: #fffaf7; border: 1px solid #f2c9b4; border-radius: 14px 14px 14px 4px; padding: 0.6em 1em; margin: 1em 12% 1em 0; }
+.etiqueta { display: block; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b6a65; margin-bottom: 0.3em; }
+```
+
+# Para empezar: la pregunta del curso
+
+Cada abril, los 32 equipos de la NFL eligen a unos 250 jugadores universitarios en el **draft**. Antes, en el **Combine**, los miden, los pesan y los hacen correr, saltar y levantar pesas. Con esa información, más lo que vieron en sus partidos universitarios, los equipos apuestan millones de dólares a que un muchacho de 21 años tendrá una buena carrera profesional. Muchas veces se equivocan.
+
+En este curso vas a construir, paso a paso, un **indicador de pronóstico del éxito profesional** y a responder una pregunta concreta:
+
+::: {.mensaje}
+¿Qué características de un jugador, conocidas antes o en el momento del draft, permiten pronosticar su éxito futuro en la NFL?
+:::
+
+Lo harás programando en R, con ayuda de la IA si quieres, pero con una regla que no cambia en todo el curso: **la IA puede escribir código por ti; tú necesitas entender qué hace, comprobar si está bien y responsabilizarte de lo que presentas.**
+
+:::: {.cifras}
+::: {.cifra}
+[14,163]{.num} [prospectos medidos en el Combine, de 1987 a 2024]{.lab}
+:::
+::: {.cifra}
+[59]{.num} [columnas: medidas físicas, pruebas, draft y carrera]{.lab}
+:::
+::: {.cifra}
+[8,234]{.num} [fueron elegidos en el draft]{.lab}
+:::
+::: {.cifra}
+[199]{.num} [el número de selección de Tom Brady, el jugador con más valor de carrera del archivo]{.lab}
+:::
+::::
+
+La gráfica muestra a los jugadores elegidos entre 2000 y 2014: su tiempo en la carrera de 40 yardas y el valor que acumularon en su carrera profesional. ¿Ves algún patrón? Al ojo, casi nada. Al final de la sesión 2 sabrás que esta nube esconde una relación, y al final del curso, cuánto se puede pronosticar con estos datos y qué no.
+
+```{r vista-previa, echo=FALSE, fig.width=9, fig.height=5}
+# Vista previa del curso. Hoy no necesitas entender este código.
+url_vista <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
+                    "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
+vista <- tryCatch(read.csv(url_vista, sep = ";", na.strings = ""),
+                  error = function(e) NULL)
+if (is.null(vista) && file.exists("datos/nfl_data.csv")) {
+  vista <- read.csv("datos/nfl_data.csv", sep = ";", na.strings = "")
+}
+
+if (!is.null(vista)) {
+  repetidos <- vista$tag[duplicated(vista$tag)]
+  vista <- vista[vista$drafted == "True" & vista$year >= 2000 & vista$year <= 2014 &
+                 vista$simple_pos != "ST" & !(vista$tag %in% repetidos) &
+                 !is.na(vista$X40_yard), ]
+  vista$career_av[is.na(vista$career_av)] <- 0
+  marcados <- vista[vista$name %in% c("Tom Brady", "Russell Wilson", "Giovanni Carmazzi"), ]
+
+  par(mar = c(4.5, 4.5, 4, 1), las = 1, bty = "l",
+      col.axis = "#52514e", col.lab = "#52514e", fg = "#898781")
+  plot(vista$X40_yard, vista$career_av, type = "n",
+       xlab = "Tiempo en 40 yardas (segundos)", ylab = "Valor de carrera (career_av)")
+  grid(col = "#e6e5e0", lty = 1)
+  points(vista$X40_yard, vista$career_av, pch = 19, cex = 0.7,
+         col = adjustcolor("#2a78d6", alpha.f = 0.35))
+  points(marcados$X40_yard, marcados$career_av, pch = 21, bg = "#eb6834",
+         col = "white", cex = 1.9, lwd = 1.5)
+  text(marcados$X40_yard, marcados$career_av, cex = 0.85,
+       pos = ifelse(marcados$name == "Tom Brady", 2, 4),
+       paste0(marcados$name, " (pick ", marcados$draft_pick, ")"))
+  title(main = "¿Ves un patrón? Velocidad y valor de carrera de los jugadores elegidos",
+        adj = 0, font.main = 1, cex.main = 1.15, line = 2.2)
+  mtext(paste(format(nrow(vista), big.mark = ","),
+              "jugadores elegidos entre 2000 y 2014 con tiempo registrado"),
+        side = 3, line = 0.8, adj = 0, cex = 0.85, col = "#52514e")
+} else {
+  plot.new()
+  text(0.5, 0.5, "Sin conexión: la gráfica aparecerá cuando R pueda leer los datos (sección 2).")
+}
+```
+
+*El código de esta gráfica está en el `.Rmd`, en el bloque `vista-previa`. Hoy no hace falta entenderlo.*
+
+---
+
+# Antes de empezar
+
+Este archivo es un R Markdown: mezcla texto y bloques de código (*chunks*). Puedes leerlo como un documento y, al mismo tiempo, ejecutar cada bloque para ver qué hace.
+
+**R** es el lenguaje que ejecuta las instrucciones; **RStudio** es el programa en el que escribimos, ejecutamos y organizamos ese código. Al abrir RStudio verás el editor (donde está este archivo), la consola (donde R responde), el panel *Environment* (los objetos que has creado) y un panel con archivos, gráficas y ayuda.
+
+- Para ejecutar una línea: coloca el cursor en ella y presiona `Ctrl + Enter` (en Mac, `Cmd + Enter`).
+- Para ejecutar un bloque completo: clic en el triángulo verde de su esquina superior derecha.
+- Para generar el documento HTML completo: botón **Knit**.
+
+**Instala los paquetes del curso, una sola vez.** Un *paquete* es un conjunto de funciones que alguien escribió y publicó para que no tengas que programarlas tú. En todo el curso usaremos solo tres: `dplyr` (manipular tablas), `ggplot2` (gráficas, desde la sesión 3) y `glmnet` (un modelo de la sesión 4). Escribe esto **en la consola**, no en el documento, y presiona Enter:
+
+```r
+install.packages(c("dplyr", "ggplot2", "glmnet", "rmarkdown"))
+```
+
+Se instalan una vez por computadora. Lo que sí harás en cada documento es *cargarlos* con `library()`.
+
+**Tu archivo de trabajo.** Guarda una copia de este documento con *File > Save As...* y el nombre `sesion1_trabajo.Rmd`. Trabaja en esa copia: la subirás a GitHub en la tarea.
+
+Los ejercicios de clase se corrigen en clase, en voz alta: no hay soluciones al final del documento. Inténtalos aunque te equivoques.
+
+**Cómo se evalúa este curso.** En las tareas no basta con que el código se ejecute. Se evalúa que puedas explicar qué hace cada línea, que compruebes tus resultados con los datos y que justifiques tus decisiones, hayas escrito el código tú o te lo haya propuesto una IA. Varias tareas incluyen una decisión ya tomada (un filtro, un umbral, una variable, una forma de tratar los faltantes o de medir el error) para que la pongas a prueba: puede ser adecuada para la pregunta o no serlo. Lo que cuenta es que la compruebes con los datos, expliques sus consecuencias y, si hace falta, propongas una alternativa razonable.
+
+## Qué vas a poder hacer al terminar
+
+1. Cargar un archivo desde una URL indicando las opciones que su formato necesita, y explicar por qué.
+2. Inspeccionar una tabla: dimensiones, nombres, tipos de variables y valores faltantes.
+3. Seleccionar columnas, filtrar filas, convertir tipos y crear variables con `dplyr`, encadenando pasos con `|>`.
+4. Distinguir entre éxito observado, variables predictoras y pronóstico.
+5. Detectar errores en los datos con comprobaciones sencillas y documentar cada decisión de limpieza.
+6. Explicar por qué dos códigos que funcionan, uno escrito por una persona y otro por una IA, pueden dar cifras distintas para la misma pregunta.
+
+## Organización de la sesión (90 minutos)
+
+| Minutos | Qué hacemos |
+|---------|-------------|
+| 0–10 | La pregunta del curso; éxito, predictores y pronóstico |
+| 10–25 | Cargar los datos desde internet y mirarlos: objetos, funciones y tipos |
+| 25–50 | De 14,163 filas a una base de análisis: convertir, filtrar, seleccionar y crear variables |
+| 50–65 | Faltantes y comprobaciones: quién nunca jugó, nombres repetidos, valores raros |
+| 65–80 | Actividad central: la versión normal y la versión IA |
+| 80–90 | La receta completa; lo que sabemos y lo que no; GitHub |
+
+Después de clase: **Tarea 1**, una decisión de limpieza que poner a prueba y la creación de tu repositorio de GitHub.
+
+---
+
+# 1. El encargo: éxito, predictores y pronóstico
+
+Trabajas en el departamento de análisis de un equipo de la NFL. El director general te escribe:
+
+> "Cada año elegimos a siete u ocho jugadores y la mitad no nos sirve. Quiero un indicador que, con lo que sabemos de un jugador el día del draft, nos diga qué carrera podemos esperar. Y quiero saber qué medidas valen la pena y cuáles son ruido."
+
+Antes de tocar los datos, tres palabras que vamos a usar todo el curso, y que no son lo mismo:
+
+| Concepto | Qué es | Ejemplo en este proyecto | ¿Cuándo se conoce? |
+|----------|--------|--------------------------|--------------------|
+| **Éxito observado** | Lo que efectivamente pasó en la carrera del jugador | El valor de carrera (`career_av`) o haber ido al Pro Bowl | Años después del draft |
+| **Variables predictoras** | Lo que sabemos del jugador cuando hacemos el pronóstico | Estatura, peso, tiempo en 40 yardas, posición | En el Combine o el día del draft |
+| **Pronóstico** | El valor o la probabilidad que estimamos a partir de los predictores | "Esperamos unos 25 puntos de valor de carrera" o "15% de probabilidad de ir al Pro Bowl" | Cuando tomamos la decisión |
+
+La regla de oro: **un predictor solo vale si se conoce en el momento del pronóstico.** Los partidos que jugó un jugador en su carrera dicen mucho de su éxito, pero no sirven para pronosticarlo: el día del draft todavía no se han jugado.
+
+Un apunte sobre la medida de éxito que usaremos. El **Pro Bowl** es el partido de estrellas de la NFL: ir una vez ya es una distinción. **AV** (*Approximate Value*) es un número que el sitio Pro Football Reference calcula para cada jugador y temporada a partir de lo que hizo en el campo (titularidades, estadísticas, rendimiento de su unidad); `career_av` suma las temporadas de toda la carrera. Es aproximado, como dice su nombre, pero permite comparar jugadores de posiciones distintas en una sola escala. En la sesión 2 veremos sus ventajas y sus problemas.
+
+## Ejercicio 1. Definir y anticipar (sin computadora)
+
+a) Si fueras el director general, ¿cómo medirías que un jugador "tuvo éxito"? Propón dos medidas distintas y di qué desventaja tiene cada una.
+
+b) Escribe tres datos de un jugador que **sí** conocerías el día del draft y tres que **no**.
+
+c) Anticipa: ¿crees que el tiempo en 40 yardas ayudará a pronosticar el éxito? ¿Más o menos que la posición en la que fue elegido?
+
+*Tus respuestas:*
+
+a)
+
+b)
+
+c)
+
+---
+
+# 2. Cargar los datos desde internet
+
+## Paquetes, objetos y funciones
+
+Empezamos cargando `dplyr`, el paquete con el que vamos a manipular la tabla:
+
+```{r}
+library(dplyr)
+```
+
+Ahora guardamos la dirección del archivo en un **objeto**. El operador `<-` (se lee "asigna") guarda lo que está a la derecha con el nombre de la izquierda:
+
+```{r}
+url_datos <- paste0(
+  "https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
+  "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv"
+)
+```
+
+`paste0()` es una **función**: recibe valores entre paréntesis (sus *argumentos*) y devuelve un resultado; esta en concreto pega textos. La usamos solo para que la dirección quepa en pantalla.
+
+Dos detalles de esa dirección importan:
+
+- Es el archivo `nfl_data.csv` del repositorio [phcs971/nfl-draft-dataset](https://github.com/phcs971/nfl-draft-dataset) (licencia MIT), que une resultados del Combine, datos del draft y estadísticas de carrera tomadas de Pro Football Reference y Sports Reference.
+- Lleva un código largo (`54730ea...`): es el identificador de una **versión concreta** del archivo. Si el autor lo actualiza mañana, tu código seguirá leyendo exactamente los mismos datos. Eso es **reproducibilidad**: cualquiera que ejecute tu archivo obtiene tus mismas cifras.
+
+## Leer el archivo: por qué hacen falta dos opciones
+
+`read.csv()` lee archivos de texto con forma de tabla. Por defecto supone que las columnas están separadas por comas. Este archivo no:
+
+```{r, error=TRUE}
+prueba <- read.csv(url_datos)
+```
+
+El error (`duplicate 'row.names' are not allowed`) no dice "te equivocaste de separador", pero eso es lo que pasa. El archivo separa las columnas con **punto y coma** (lo indica su documentación), y algunas celdas contienen comas dentro del texto, como `"Tom Brady, Michigan"`. R cuenta mal las columnas y termina confundido. Lección: un error de R a veces describe el síntoma, no la causa. Cuando un archivo no se lee, lo primero es mirar su documentación o sus primeras líneas.
+
+Leemos con dos opciones explícitas:
+
+- `sep = ";"`: las columnas están separadas por punto y coma.
+- `na.strings = ""`: una celda vacía significa "dato faltante" (`NA`). Sin esta opción, R deja las celdas de texto vacías como texto vacío (`""`), que parece un valor pero no lo es.
+
+No hace falta indicar codificación (`encoding`): el archivo solo tiene caracteres básicos, sin acentos.
+
+```{r}
+ruta_respaldo <- "datos/nfl_data.csv"   # copia local, por si no hay internet
+
+nfl <- tryCatch(
+  read.csv(url_datos, sep = ";", na.strings = ""),
+  error = function(e) read.csv(ruta_respaldo, sep = ";", na.strings = "")
+)
+```
+
+`tryCatch()` se lee así: "intenta leer desde la URL; si hay un error (por ejemplo, no hay internet), lee la copia local". La copia está en la carpeta `datos/` del material del curso. Si trabajas sin internet y fuera de esa carpeta, copia `datos/nfl_data.csv` junto a tu archivo.
+
+Primera comprobación, siempre: ¿llegó completo?
+
+```{r}
+dim(nfl)
+if (nrow(nfl) != 14163 || ncol(nfl) != 59) {
+  warning("El archivo no tiene 14,163 filas y 59 columnas: revisa la URL o la copia local.")
+}
+```
+
+`dim()` devuelve filas y columnas. El `if` avisa si no coinciden con lo esperado; se lee: "si el número de filas es distinto (`!=`) de 14,163 o (`||`) el de columnas distinto de 59, avisa".
+
+---
+
+# 3. Mirar la tabla por dentro
+
+## Nombres y tipos
+
+```{r}
+names(nfl)
+```
+
+Tres nombres llaman la atención: `X40_yard`, `X3_cone` y `X60yd_shuttle`. En el archivo original se llaman `40_yard`, `3_cone` y `60yd_shuttle`, pero en R un nombre no puede empezar con un número, así que `read.csv()` les antepone una `X`. No es un error: es R protegiéndose. Lo arreglaremos dándoles un nombre propio.
+
+`glimpse()`, de `dplyr`, muestra cada columna con su tipo y sus primeros valores. Con 59 columnas es la forma más rápida de ver la tabla entera:
+
+```{r}
+glimpse(nfl)
+```
+
+Los tipos que aparecen:
+
+| Tipo | Qué es | Ejemplo |
+|------|--------|---------|
+| `<int>` | Número entero | `year` |
+| `<dbl>` | Número con decimales | `height`, `career_av` |
+| `<chr>` | Texto | `name`, `pos`, y también `drafted` |
+| `<lgl>` | Lógico: `TRUE` o `FALSE` | `X60yd_shuttle` |
+
+Dos cosas raras, y las dos son información:
+
+- `drafted` es **texto** (`"True"`/`"False"`), no un valor lógico. Así lo escribió quien armó el archivo. Lo convertiremos.
+- `X60yd_shuttle` es **lógica** y todos sus valores son `NA`: la columna está vacía. Cuando R no encuentra ni un solo dato, no puede adivinar el tipo y elige el más simple.
+
+## Lo que dice el archivo sobre sí mismo
+
+```{r}
+table(nfl$drafted)
+summary(nfl$career_av)
+```
+
+El símbolo `$` saca una columna de la tabla. `table()` cuenta cuántas veces aparece cada valor; `summary()` resume una columna numérica. `career_av` tiene 6,866 `NA`: los 5,929 jugadores no elegidos no tienen carrera registrada en el archivo, y faltan otros 937. Averiguaremos quiénes son.
+
+La documentación del archivo dice que las medidas están en **unidades estadounidenses**: estatura en pulgadas, peso en libras, saltos en pulgadas, tiempos en segundos. Compruébalo tú: ¿tiene sentido una estatura media de unas 74 pulgadas (1.88 m) y un peso de unas 240 libras (109 kg)?
+
+```{r}
+summary(nfl$height)
+summary(nfl$weight)
+```
+
+---
+
+# 4. De 14,163 filas a una base de análisis
+
+Nuestra base de análisis tiene que contener a los jugadores para los que podemos medir el éxito y cuya carrera ya se puede evaluar. Vamos a construirla paso a paso, comprobando en cada paso cuántas filas quedan.
+
+## Convertir un tipo y encadenar pasos
+
+`mutate()` crea o modifica columnas. `as.logical()` convierte el texto `"True"`/`"False"` en los valores lógicos `TRUE`/`FALSE`:
+
+```{r}
+elegidos <- nfl |>
+  mutate(drafted = as.logical(drafted)) |>
+  filter(drafted)
+
+nrow(elegidos)
+```
+
+El símbolo `|>` (*pipe*) se lee **"y luego"**: "toma `nfl`, y luego convierte `drafted`, y luego quédate con las filas en que `drafted` es verdadero". Cada función recibe la tabla que le pasa la anterior. `filter()` conserva las filas que cumplen una condición.
+
+Fíjate en que guardamos el resultado en un objeto nuevo, `elegidos`, y no tocamos `nfl`: si nos equivocamos, el original sigue intacto.
+
+## Filtrar: quiénes entran en el análisis
+
+Solo los jugadores elegidos tienen datos de carrera en este archivo, así que el análisis se limita a ellos. Ahora, los años:
+
+```{r}
+elegidos <- elegidos |>
+  filter(year >= 2000, year <= 2014)
+
+nrow(elegidos)
+```
+
+Dentro de `filter()`, separar condiciones con comas significa "y": año mayor o igual que 2000 y menor o igual que 2014. ¿Por qué esos años?
+
+- **Hasta 2014**: el archivo llega a la temporada 2024. Un jugador elegido en 2014 ha tenido al menos diez temporadas para acumular valor; uno elegido en 2022, solo tres. Si los mezcláramos, los jugadores recientes parecerían peores solo porque su carrera no ha terminado. En la sesión 2 lo comprobaremos con los datos.
+- **Desde 2000**: es una NFL más parecida a la actual, con siete rondas de draft (hasta 1992 había doce) y con quince generaciones, suficientes para el proyecto.
+
+Ahora las posiciones. `simple_pos` agrupa las posiciones detalladas:
+
+```{r}
+table(elegidos$simple_pos)
+```
+
+`ST` son los equipos especiales: pateadores (`K`) y despejadores (`P`). Casi no hacen las pruebas físicas y su valor de carrera se mide de otra manera, así que los dejamos fuera del análisis. El signo `!=` significa "distinto de":
+
+```{r}
+elegidos <- elegidos |>
+  filter(simple_pos != "ST")
+
+nrow(elegidos)
+```
+
+## Seleccionar y renombrar columnas
+
+De 59 columnas necesitamos unas pocas. `select()` se queda con las que nombramos, en ese orden; `rename()` cambia un nombre (`nuevo = viejo`):
+
+```{r}
+mini <- elegidos |>
+  select(name, year, simple_pos, draft_pick, weight, X40_yard, career_av, pro_bowls) |>
+  rename(forty = X40_yard)
+
+head(mini)
+```
+
+`head()` muestra las primeras seis filas. `forty` es más fácil de escribir que `X40_yard` y se entiende igual.
+
+## Crear variables
+
+Dos variables nuevas que usaremos en el proyecto:
+
+- `pro_bowl`: `TRUE` si el jugador fue al menos una vez al Pro Bowl. Es una versión sí/no del éxito.
+- `speed_score`: un indicador de velocidad que tiene en cuenta el peso, propuesto por el analista Bill Barnwell: `peso × 200 / tiempo⁴` (peso en libras, tiempo en segundos). Correr 4.5 segundos no tiene el mismo mérito pesando 180 libras que pesando 250. La fórmula está calibrada para que un corredor típico dé alrededor de 100.
+
+```{r}
+mini <- mini |>
+  mutate(
+    pro_bowl    = pro_bowls >= 1,
+    speed_score = weight * 200 / forty^4
+  )
+
+head(mini)
+```
+
+`^` eleva a una potencia y `>=` significa "mayor o igual que": `pro_bowls >= 1` devuelve `TRUE` o `FALSE` para cada jugador.
+
+**Comprueba que la variable mide lo que dice.** Si la fórmula está bien escrita, la mediana de los corredores (`RB`) debería rondar 100:
+
+```{r}
+mini |>
+  filter(simple_pos == "RB") |>
+  summarise(mediana_speed = median(speed_score, na.rm = TRUE))
+```
+
+`summarise()` resume una tabla en una fila. `na.rm = TRUE` le dice a `median()` que ignore los faltantes; sin él, un solo `NA` hace que el resultado sea `NA`. Sale cerca de 100: la fórmula está bien escrita. Si hubiéramos escrito `forty^2` en lugar de `forty^4`, el número saldría absurdo y lo habríamos notado aquí.
+
+---
+
+# 5. Faltantes y primeras comprobaciones
+
+## ¿Qué falta?
+
+`is.na()` pregunta "¿falta?" para cada celda y `colSums()` cuenta los `TRUE` de cada columna:
+
+```{r}
+elegidos |>
+  select(height, weight, X40_yard, vert_leap, broad_jump, bench_press, shuttle,
+         age, career_av, pro_bowls, g) |>
+  is.na() |>
+  colSums()
+```
+
+Tres lecturas:
+
+- Las pruebas del Combine tienen bastantes faltantes: no todos los jugadores hacen todas las pruebas.
+- `career_av` y `g` (partidos jugados) faltan para 309 jugadores **elegidos**. Eso no es lo mismo que los no elegidos.
+- `age` falta para 180. Volveremos a esta columna en la sesión 2: sus faltantes esconden una sorpresa.
+
+## ¿Quiénes son los elegidos sin carrera?
+
+```{r}
+elegidos |>
+  filter(is.na(career_av), draft_round <= 3) |>
+  select(year, name, pos, draft_round, draft_pick, pro_bowls, g)
+```
+
+Algunos nombres son conocidos entre los aficionados: Giovanni Carmazzi (2000) nunca jugó un partido oficial; Maurice Clarett (2005) tampoco; Chad Jones (2010) sufrió un accidente antes de debutar. El patrón es claro: **el archivo deja en blanco la carrera de los jugadores elegidos que nunca jugaron en la NFL**. Comprobémoslo con los 309:
+
+```{r}
+elegidos |>
+  filter(is.na(career_av)) |>
+  summarise(n = n(),
+            con_pro_bowl = sum(pro_bowls >= 1),
+            con_partidos = sum(!is.na(g)))
+```
+
+Ninguno fue al Pro Bowl ni tiene partidos registrados. **Decisión:** para estos jugadores, `career_av = 0`. Su carrera existió y valió cero. La alternativa, eliminarlos, borraría precisamente a los fracasos más caros y haría que el draft pareciera más acertado de lo que es. Dejamos además una columna `nunca_jugo` para no perder el rastro de la decisión.
+
+## ¿El nombre identifica a un jugador?
+
+La columna `tag` combina nombre y universidad. ¿Se repite alguna vez?
+
+```{r}
+sum(duplicated(nfl$tag))
+
+tags_repetidos <- nfl$tag[duplicated(nfl$tag)]
+
+nfl |>
+  filter(tag %in% tags_repetidos) |>
+  select(year, name, pos, drafted, team, draft_pick, year_max, career_av) |>
+  arrange(name, year)
+```
+
+`duplicated()` marca cada valor que ya apareció antes; `%in%` pregunta "¿está en esta lista?"; `arrange()` ordena. Hay 8 parejas con el mismo nombre y la misma universidad en años distintos. Algunas son padre e hijo: Jon Runyan jugó en Michigan y fue elegido en 1996; su hijo, también Jon Runyan y también de Michigan, en 2020.
+
+Ahora mira las columnas `year`, `pos`, `team` y `year_max` (último año en que jugó). Mario Edwards aparece como esquinero (CB) medido en el Combine de 2000, elegido por los Raiders en el puesto 35, y con una carrera que llega hasta 2024: **un esquinero con 25 temporadas**. No es verosímil. Lo que pasó es que el archivo unió los datos del draft y de la carrera usando nombre y universidad, y cuando había dos personas con el mismo `tag` pegó la información del hijo (elegido en 2015 como ala defensiva) en la fila del padre. Lo mismo ocurre con otras filas de la lista: la fila de Jon Runyan de 1996 lleva el equipo y el número de selección del hijo (Packers, 192) y una carrera que llega a 2024.
+
+**Decisión:** excluimos todas las filas cuyo `tag` está repetido. En nuestro periodo son 3 jugadores elegidos (Mario Edwards 2000, Mike Davis 2009 y Jordan Jefferson 2012), cuya carrera registrada pertenece a otra persona. Para cada jugador elegido sí hay un identificador único, `player_id`, que comprobaremos al final.
+
+## ¿Hay valores imposibles?
+
+```{r}
+summary(elegidos$career_av)
+
+elegidos |>
+  filter(career_av < 0) |>
+  select(year, name, pos, draft_pick, career_av, g)
+```
+
+Un valor de carrera negativo parece un error, pero el AV puede ser negativo en temporadas muy malas, sobre todo de *quarterbacks*. Ryan Lindley (2012) jugó 10 partidos con muy malos números. Es un valor real: lo conservamos. **Comprobar no siempre significa corregir**; a veces significa entender.
+
+---
+
+# 6. La receta completa
+
+Juntamos todos los pasos en un solo bloque. Esta **receta** es la que copiarás al principio de cada sesión, para que cada documento funcione solo, de principio a fin:
+
+```{r}
+tags_repetidos <- nfl$tag[duplicated(nfl$tag)]   # nombre + universidad repetidos
+
+base <- nfl |>
+  rename(forty = X40_yard) |>
+  mutate(drafted = as.logical(drafted)) |>
+  filter(drafted,                          # solo elegidos: los únicos con carrera registrada
+         year >= 2000, year <= 2014,       # al menos diez temporadas para acumular valor
+         simple_pos != "ST",               # sin pateadores ni despejadores
+         !(tag %in% tags_repetidos)) |>    # sin filas con la carrera de otra persona
+  mutate(nunca_jugo  = is.na(career_av),   # elegido, pero sin partidos en la NFL
+         career_av   = ifelse(nunca_jugo, 0, career_av),
+         g           = ifelse(nunca_jugo, 0, g),
+         pro_bowl    = pro_bowls >= 1,
+         speed_score = weight * 200 / forty^4) |>
+  select(player_id, name, college, year, pos, simple_pos, draft_round, draft_pick, age,
+         height, weight, hand_size, arm_length, forty, vert_leap, broad_jump,
+         bench_press, shuttle, speed_score,
+         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo)
+```
+
+Dos piezas nuevas: `!` niega una condición (`!(tag %in% tags_repetidos)` es "el tag **no** está en la lista") e `ifelse(condición, sí, no)` elige un valor u otro fila por fila.
+
+Comprobaciones finales:
+
+```{r}
+nrow(base)                       # deberían ser 3,197
+sum(duplicated(base$player_id))  # 0: cada fila es un jugador distinto
+sum(is.na(base$career_av))       # 0: ya no faltan resultados
+table(base$nunca_jugo)           # 309 elegidos que nunca jugaron
+```
+
+| Paso | Filas |
+|------|-------|
+| Archivo completo | 14,163 |
+| Elegidos en el draft | 8,234 |
+| Elegidos entre 2000 y 2014 | 3,232 |
+| Sin pateadores ni despejadores | 3,200 |
+| Sin `tag` repetido | 3,197 |
+
+Esta tabla es la primera parte de la documentación de tu proyecto: cada fila que se fue tiene una razón escrita.
+
+---
+
+# 7. Actividad central: la versión normal y la versión IA
+
+El director general hace una pregunta concreta:
+
+> "¿Cuánto valor de carrera acumula, en promedio, un jugador que elegimos en el draft? Usa los drafts de 2000 a 2014."
+
+## Paso 1. Anticipa
+
+Con lo que viste en `summary(elegidos$career_av)`, ¿cuánto debería dar, aproximadamente? *Mi estimación:*
+
+## Paso 2. La versión normal
+
+::: {.normal}
+[Versión normal]{.etiqueta}
+
+```{r}
+mean(base$career_av)
+median(base$career_av)
+```
+:::
+
+Usa la base que acabamos de construir, con sus decisiones documentadas, y da dos cifras: la media y la mediana.
+
+## Paso 3. La versión IA
+
+La respuesta del asistente fue **redactada para este curso** imitando la forma en que suelen contestar estas herramientas; no es la transcripción de una herramienta concreta. El código sí se ejecuta con tus datos.
+
+::: {.chat-usuario}
+[Tú]{.etiqueta}
+
+Tengo en R un data frame `nfl` con datos del NFL Combine y del draft (columnas `drafted`, `year`, `career_av`, `X40_yard`, `weight`...). ¿Cuánto valor de carrera (`career_av`) acumula en promedio un jugador elegido en el draft entre 2000 y 2014?
+:::
+
+::: {.chat-ia}
+[Asistente de IA]{.etiqueta}
+
+¡Excelente pregunta! 🏈 Aquí tienes un análisis **robusto y reproducible** con `dplyr`, siguiendo buenas prácticas de limpieza de datos:
+
+```{r version-ia}
+library(dplyr)
+
+# ==========================================================
+# Análisis del valor de carrera (AV) de jugadores drafteados
+# ==========================================================
+
+# --- Paso 1: Filtrar jugadores drafteados (2000-2014) -----
+df_draft <- nfl %>%
+  filter(drafted == "True", year >= 2000 & year <= 2014)
+
+# --- Paso 2: Limpieza de datos ----------------------------
+# Eliminamos registros con valores faltantes en las variables
+# clave para evitar sesgos y garantizar resultados confiables
+df_clean <- df_draft %>%
+  filter(!is.na(career_av), !is.na(X40_yard), !is.na(weight))
+
+# --- Paso 3: Estadísticas descriptivas --------------------
+resumen_av <- df_clean %>%
+  summarise(
+    n_jugadores = n(),
+    av_promedio = mean(career_av),
+    av_mediana  = median(career_av),
+    av_desv_est = sd(career_av),
+    av_maximo   = max(career_av)
+  )
+print(resumen_av)
+
+# --- Paso 4: Resultado ------------------------------------
+cat(sprintf("✅ Un jugador drafteado acumula en promedio %.1f puntos de AV.\n",
+            resumen_av$av_promedio))
+```
+
+**Explicación del código:**
+
+1. **Filtrado:** selecciona a los jugadores elegidos en el draft entre 2000 y 2014.
+2. **Limpieza:** elimina los registros incompletos, lo que evita sesgos y garantiza que el promedio sea representativo.
+3. **Estadísticas:** calcula la media, la mediana, la desviación estándar y el máximo para una visión completa.
+
+💡 **Interpretación:** un jugador drafteado típico acumula alrededor de 21 puntos de AV a lo largo de su carrera, lo que refleja el valor que los equipos obtienen en promedio de cada selección.
+
+¿Quieres que también lo desglose por ronda o por posición? 😊
+:::
+
+Funciona, limpia los datos, comenta cada paso y termina con un mensaje seguro de sí mismo. Pero no da lo mismo que la versión normal.
+
+## Paso 4. ¿En qué se nota que no lo escribió una persona?
+
+En parejas, encuentren al menos **cuatro rasgos** de la versión IA que una persona rara vez escribiría para responder una pregunta de una línea (fíjense en los comentarios, en lo que afirma, en cómo presenta el resultado). Para cada uno, decidan si **ayuda**, **estorba** o **da igual**.
+
+| Rasgo de la versión IA | ¿Ayuda, estorba o da igual? ¿Por qué? |
+|------------------------|----------------------------------------|
+| | |
+| | |
+| | |
+| | |
+
+Que un código parezca escrito por una IA no lo hace incorrecto, y que esté bien presentado no lo hace correcto. Lo que decide es qué hace con los datos.
+
+## Paso 5. Lee antes de juzgar
+
+Siguen en parejas, unos 10 minutos.
+
+a) Para cada línea de código de la versión IA, escribe qué hace. `%>%` es otra forma de escribir `|>`; hacen lo mismo.
+
+b) Completa:
+
+| | Versión normal | Versión IA |
+|---|---|---|
+| ¿Con cuántos jugadores calcula? | | |
+| Media | | |
+| Mediana | | |
+
+c) ¿De dónde sale la diferencia? Estas instrucciones te ayudan:
+
+```{r, eval=FALSE}
+sum(is.na(df_draft$career_av))
+sum(is.na(df_draft$X40_yard))
+
+base |> filter(is.na(forty))  |> summarise(n = n(), av_medio = mean(career_av))
+base |> filter(!is.na(forty)) |> summarise(n = n(), av_medio = mean(career_av))
+
+table(df_clean$simple_pos)
+```
+
+d) La explicación dice que eliminar los registros incompletos "evita sesgos". Con lo que encontraste en c), ¿los evita o los crea? ¿Hacia dónde empuja el promedio?
+
+e) La interpretación habla de un jugador "típico" con 21 puntos. Con la mediana a la vista, ¿la media describe a un jugador típico?
+
+f) ¿Qué cifra le presentarías al director general y cómo la explicarías en dos frases?
+
+::: {.ia}
+**Si tienes acceso a una IA.** Pídele lo mismo, pero añade lo que sabes: *"Los jugadores elegidos que nunca jugaron tienen `career_av` vacío; cuentan como 0. No elimines filas sin decirme cuántas y por qué."* Compara su nueva respuesta con la versión normal. Después pregúntale: *"¿Tu código elimina alguna fila? ¿Cuántas?"*, y compruébalo tú con `nrow()`.
+
+**Sin IA**, el ejercicio es el mismo: la conversación incluida en este documento cumple ese papel.
+:::
+
+---
+
+# 8. Ejercicio individual
+
+## Ejercicio 3. Modificar la versión normal
+
+a) Elige una posición (`simple_pos`: `QB`, `RB`, `WR`, `TE`, `OL`, `DL`, `LB` o `DB`). Calcula la media y la mediana de `career_av` solo para esa posición. Pista: `filter()` y después `summarise()`.
+
+b) ¿Qué proporción de jugadores de la base fue al menos una vez al Pro Bowl? Pista: `mean(base$pro_bowl)`. La media de una columna de `TRUE`/`FALSE` es la proporción de `TRUE`, porque R cuenta `TRUE` como 1 y `FALSE` como 0.
+
+c) Debajo de tu código, escribe un comentario de una línea con lo que cambiaste respecto a la versión normal y qué efecto tuvo.
+
+```{r}
+# a)
+
+# b)
+
+```
+
+## Ejercicio 4. La ficha de la base
+
+a) ¿Cuántos jugadores hay de cada año de draft? ¿Algún año se ve distinto?
+
+b) De las pruebas del Combine (`forty`, `vert_leap`, `broad_jump`, `bench_press`, `shuttle`), ¿cuál tiene más faltantes en `base`?
+
+c) Busca a Tom Brady y a Russell Wilson con `filter(name %in% c("Tom Brady", "Russell Wilson"))` y muestra su año, posición, número de selección, tiempo en 40 yardas y `career_av`. ¿Qué te dicen estos dos casos sobre la dificultad de pronosticar?
+
+d) Busca a J.J. Watt, uno de los mejores defensivos de su generación. Si `filter(name == "J.J. Watt")` no devuelve nada, prueba `filter(grepl("Watt", name))`: `grepl()` busca un texto **dentro** de otro. ¿Qué aprendes sobre buscar por nombre?
+
+```{r}
+# Tu código
+
+```
+
+---
+
+# 9. Lo que sabemos y lo que todavía no sabemos
+
+Vuelve a tu Ejercicio 1. ¿Esperabas que una de cada diez selecciones no jugara nunca?
+
+| Lo que sabemos de la base | Lo que todavía no sabemos |
+|---------------------------|---------------------------|
+| | |
+| | |
+| | |
+
+---
+
+# 10. Para cerrar: dónde va a vivir tu proyecto
+
+Dos preguntas para discutir en grupo:
+
+1. Si tuvieras que decir en una reunión "un jugador elegido acumula 18 puntos de valor de carrera en promedio", ¿qué tendrías que aclarar sobre quiénes están en ese promedio?
+
+2. La versión IA tomó una decisión de limpieza en una línea y la explicó con una frase convincente. ¿Cómo te habrías dado cuenta sin la versión normal al lado?
+
+Hoy tomaste cinco decisiones que cambian quién está en el análisis. Alguien tiene que poder ver **qué código se usó, cuándo se cambió y por qué**. Para eso usaremos **GitHub**: un sitio web donde guardarás tu proyecto en un *repositorio* que conserva cada versión que subes.
+
+Tu repositorio será **público**. Así cualquiera puede revisar tu trabajo con solo abrir el enlace, y al terminar el curso tendrás un portafolio con un proyecto de pronóstico real, su código y la historia de cómo lo hiciste.
+
+| Acción | Dónde queda | Quién lo ve | ¿Puedes recuperar la versión anterior? |
+|--------|-------------|-------------|----------------------------------------|
+| **Guardar** el archivo en RStudio (`Ctrl + S`) | En tu computadora | Solo tú | No: la versión nueva reemplaza a la anterior |
+| **Subir** el archivo a GitHub | En tu repositorio | Cualquiera que lo abra | Sí, porque cada subida queda registrada |
+| **Registrar una versión** en el historial | En el historial del repositorio | Cualquiera que lo abra | Es justamente para eso: cada versión con su fecha y un mensaje |
+
+Cuando subes archivos desde la página web de GitHub, las dos últimas acciones ocurren a la vez. Guardar en tu computadora no cambia nada en GitHub.
+
+---
+
+# Tarea 1 (después de clase): una decisión de limpieza y tu repositorio
+
+::: {.tarea}
+**Tiempo estimado:** 15–20 minutos para la parte A (en RStudio) y 30–45 minutos para la parte B (en GitHub).
+
+**Qué entregas:** el enlace a tu repositorio público `curso-programacion-r`, con un `README.md` que documente la base de datos, una carpeta por sesión y tu archivo `sesion1_trabajo.Rmd` (con la parte A al final) dentro de `sesion-1/`, acompañado de una nota breve.
+
+**Cómo lo entregas:** pegas el enlace en la actividad «Tarea 1» de la plataforma del curso (paso 10).
+
+**Qué se valora:** que compruebes con los datos lo que calculas, que expliques tus decisiones y que tu repositorio permita revisar tu trabajo. Que el código se ejecute es necesario, pero no suficiente.
+:::
+
+## Parte A. "Sin faltantes en el modelo"
+
+Hazla en tu archivo `sesion1_trabajo.Rmd`, en una sección nueva al final (`# Tarea 1: sin faltantes`). Añade bloques de código con *Code > Insert Chunk* (`Ctrl + Alt + I`; en Mac, `Cmd + Option + I`) y escribe tus respuestas como texto debajo de cada bloque.
+
+El analista jefe te escribe:
+
+> "Para el modelo quiero una base limpia, sin un solo faltante. Quédate solo con los jugadores que tienen las cinco pruebas del Combine completas: 40 yardas, salto vertical, salto largo, press de banca y *shuttle*. Así nadie podrá decir que inventamos datos."
+
+**1. Anticipa.** Antes de ejecutar nada: ¿cuántos jugadores de los 3,197 crees que quedarán? ¿Cambiará el tipo de jugador que queda?
+
+**2. Implementa la propuesta tal como está:**
+
+```r
+base_completa <- base |>
+  filter(!is.na(forty), !is.na(vert_leap), !is.na(broad_jump),
+         !is.na(bench_press), !is.na(shuttle))
+nrow(base_completa)
+```
+
+**3. Comprueba.** Compara `base` y `base_completa`: número de jugadores por posición (`table(...$simple_pos)`), media y mediana de `career_av`, proporción de Pro Bowl y número de jugadores de primera ronda (`sum(...$draft_round == 1)`). Presenta lo que encuentres en una tabla breve.
+
+**4. Evalúa la decisión.** En tres o cuatro frases: ¿es adecuada esta base para pronosticar el éxito de **cualquier** jugador elegido? ¿Qué consecuencias tendría usarla? ¿Qué alternativa propones? Implementa tu alternativa y di cuántos jugadores conserva.
+
+**5. Seguimiento.**
+
+a) Una posición casi desaparece con la propuesta. ¿Cuál, y qué prueba lo provoca? Busca una explicación razonable de por qué esos jugadores no la hacen.
+
+b) Si quitas la condición de `bench_press`, ¿cuántos jugadores recuperas? ¿Cambia tu conclusión?
+
+## Parte B. Tu repositorio en GitHub
+
+::: {.aviso}
+**Antes de empezar: tu repositorio será público.** Cualquiera en internet podrá leerlo, y lo que subes queda en el historial aunque después lo borres. Nunca deben aparecer en él contraseñas, tokens o claves de acceso, códigos de verificación ni datos personales innecesarios (teléfono, domicilio, matrícula, fecha de nacimiento). Tu nombre basta. Si quieres que tu correo no aparezca en los cambios, activa en GitHub *Settings > Emails > Keep my email addresses private*.
+:::
+
+## Paso 1. Crea tu cuenta de GitHub (si no tienes una)
+
+1. Entra a <https://github.com> y pulsa **Sign up**.
+2. Escribe tu correo, una contraseña y un **nombre de usuario**. El nombre de usuario será público y formará parte de la dirección de tu repositorio: elige uno sobrio (por ejemplo, tu nombre y apellido sin espacios). Piensa que puede acabar en tu currículum.
+3. Completa la verificación que te pida GitHub (un rompecabezas y un código que llega a tu correo).
+4. Si GitHub te pide activar la **verificación en dos pasos**, sigue sus instrucciones y guarda los códigos de recuperación en un lugar seguro, fuera del repositorio.
+
+**Cómo saber que funcionó:** al entrar a <https://github.com> ves tu imagen de perfil (o un ícono) en la esquina superior derecha.
+
+## Paso 2. Crea el repositorio
+
+1. Pulsa el botón **+** de la esquina superior derecha y elige **New repository** (o entra a <https://github.com/new>).
+2. En **Owner** debe aparecer tu nombre de usuario.
+3. En **Repository name** escribe exactamente `curso-programacion-r`: minúsculas, guiones, sin acentos ni espacios. Si escribes espacios o acentos, GitHub los cambiará por guiones y el nombre ya no coincidirá con el que usan todas las instrucciones del curso.
+
+**Cómo saber que funcionó:** GitHub indica junto al campo si el nombre está disponible.
+
+## Paso 3. Añade una descripción
+
+En **Description** escribe una frase como: *Proyecto de R: ¿qué características de un jugador permiten pronosticar su éxito en la NFL?*
+
+## Paso 4. Déjalo público
+
+En la opción de visibilidad elige **Public**. Cualquiera podrá verlo, pero solo tú podrás modificarlo.
+
+## Paso 5. Crea el repositorio con un `README.md` que documente los datos
+
+1. Activa la opción para añadir un README (*Add a README file* o *Add README*). Deja lo demás como está.
+2. Pulsa **Create repository**.
+3. Abre `README.md`, pulsa el lápiz (*Edit this file*) y reemplaza el contenido por esta plantilla, **completada con tus palabras**:
+
+```
+# Pronosticar el éxito en la NFL
+
+Proyecto del curso "Programar con criterio en la era de la IA".
+Pregunta: ¿qué características de un jugador, conocidas en el draft,
+permiten pronosticar su éxito profesional?
+
+Autor/a: [tu nombre y apellido]
+
+## Datos
+- Archivo: nfl_data.csv del repositorio phcs971/nfl-draft-dataset
+  (licencia MIT), leído desde una URL fijada a la versión 54730ea.
+- Contenido: [qué contiene, cuántas filas y columnas]
+- Base de análisis: [quiénes entran y cuántos son]
+
+## Variables principales
+- Éxito observado: [variable y qué mide]
+- Predictores: [variables y por qué se conocen en el draft]
+
+## Decisiones de limpieza
+1. [decisión y razón]
+2. ...
+
+## Carpetas
+- sesion-1/ a sesion-5/: trabajos de cada sesión
+```
+
+4. Pulsa **Commit changes...**, escribe en **Commit message** algo descriptivo, como *Documentar datos y decisiones de limpieza*, y confirma en la rama `main`.
+
+**Cómo saber que funcionó:** la portada del repositorio muestra tu README debajo de la lista de archivos.
+
+## Paso 6. Cuatro palabras que vas a usar todo el curso
+
+- **Repositorio**: la carpeta en línea, con dirección propia: `https://github.com/tu-usuario/curso-programacion-r`.
+- **Archivo**: cada documento dentro del repositorio, organizado en carpetas.
+- **Cambio** (*commit*): cada vez que creas, subes, editas o borras archivos y confirmas, GitHub registra un cambio con fecha, autor y mensaje.
+- **Historial**: la lista de todos los cambios. Encima de la lista de archivos, el enlace con un reloj y la palabra *Commits*. Para un solo archivo: ábrelo y pulsa **History**.
+
+**Comprueba:** abre el historial. Haz clic en la edición del README: GitHub muestra en verde lo que añadiste y en rojo lo que quitaste.
+
+## Paso 7. Crea la estructura de carpetas
+
+```
+curso-programacion-r/
+├── README.md
+├── sesion-1/
+├── sesion-2/
+├── sesion-3/
+├── sesion-4/
+└── sesion-5/
+```
+
+No hace falta subir los datos: tu código los lee de la URL fijada. GitHub no guarda carpetas vacías, así que cada carpeta se crea con un archivo de notas:
+
+1. En la portada, **Add file > Create new file**.
+2. En el nombre escribe `sesion-1/notas.md`. Al escribir la diagonal `/`, GitHub convierte `sesion-1` en una carpeta.
+3. En el contenido escribe `# Sesión 1`.
+4. Pulsa **Commit changes...**, escribe un mensaje como *Crear carpeta de la sesión 1* y confirma.
+5. Repite para `sesion-2` a `sesion-5`.
+
+**Cómo saber que funcionó:** en la portada ves `README.md` y las cinco carpetas.
+
+## Paso 8. Sube tu primer archivo de trabajo
+
+**8.1 Organiza tu computadora igual que el repositorio.** Crea una carpeta `curso-programacion-r` con una carpeta `sesion-1` y mueve ahí `sesion1_trabajo.Rmd`.
+
+**8.2 Compila.** Abre el archivo en RStudio y pulsa **Knit**. Como los datos se leen de internet, no hay rutas que cambiar. Comprueba que la parte A aparece completa en el HTML.
+
+**8.3 Súbelo.** En GitHub, entra a `sesion-1`, **Add file > Upload files**, arrastra `sesion1_trabajo.Rmd` (y, si quieres, su HTML). Mensaje: *Agregar trabajo de la sesión 1*. **Commit changes**.
+
+**8.4 Escribe tu nota de entrega.** Edita `sesion-1/notas.md` con esto, completado con tus palabras:
+
+```
+# Sesión 1
+
+1. Lo que quería conseguir:
+2. Archivos y código: sesion1_trabajo.Rmd (carga nfl_data.csv, construye
+   la base de análisis y, al final, la parte A)
+3. Comprobaciones que hice: (filas en cada paso, ¿compiló?, ¿con qué
+   comprobaste la propuesta del analista jefe?)
+4. Cambios que conservé o descarté: (qué hiciste con la propuesta y por qué)
+5. Lo que puedo afirmar: dos o tres frases sobre la base de análisis
+```
+
+Confirma con un mensaje como *Nota de entrega de la sesión 1*.
+
+## Paso 9. Comprueba que todo está bien
+
+1. Abre `sesion-1/sesion1_trabajo.Rmd` en GitHub. GitHub muestra el texto y el código, pero no los resultados: es normal. Busca una de tus respuestas para confirmar que subiste **tu** versión.
+2. Si subiste el HTML, GitHub lo muestra como código. Quien lo quiera ver puede descargarlo con *Download raw file*.
+3. Abre el historial (*Commits*): un cambio por paso, cada uno con su mensaje.
+4. Abre tu repositorio en una ventana privada del navegador (sin sesión iniciada): eso es lo que ve cualquier persona. Si aparece un error 404, quedó privado. Corrígelo en **Settings**, zona roja *Danger Zone*, **Change visibility**, **Public**.
+
+## Paso 10. Entrega el enlace
+
+1. Copia la dirección de la portada de tu repositorio: `https://github.com/tu-usuario/curso-programacion-r`.
+2. Pégala en la actividad «Tarea 1» de la plataforma del curso. Antes, pruébala en la ventana privada.
+
+## Errores habituales y cómo resolverlos
+
+| Lo que pasa | Por qué suele pasar | Qué hacer |
+|-------------|---------------------|-----------|
+| `there is no package called 'dplyr'` | El paquete no está instalado | Ejecuta en la consola `install.packages("dplyr")` |
+| Al hacer Knit, error al leer la URL | No hay internet en ese momento | Copia `datos/nfl_data.csv` del material del curso a una carpeta `datos` junto a tu archivo |
+| `object 'base' not found` al ejecutar un bloque suelto | No ejecutaste antes los bloques anteriores | *Run > Run All Chunks Above* |
+| El repositorio se llama distinto | Se escribió con acentos o mayúsculas | **Settings > General > Repository name**, corrige y pulsa *Rename* |
+| Subí el archivo a la carpeta equivocada | Se pulsó *Upload files* desde la portada | Abre el archivo, lápiz, y en el nombre escribe la carpeta delante (`sesion-1/...`) |
+| En la ventana privada el enlace da *404* | El repositorio quedó privado o el enlace tiene una errata | Paso 9.4 |
+| GitHub rechaza la subida porque contiene un secreto | Hay una clave o token en el archivo | Elimínalo antes de volver a subirlo |
+
+## Lista de comprobación final
+
+- [ ] El repositorio se llama `curso-programacion-r`, es público y tiene descripción.
+- [ ] El `README.md` documenta el archivo de datos, la base de análisis, las variables principales y las decisiones de limpieza.
+- [ ] Existen las carpetas `sesion-1` a `sesion-5`.
+- [ ] `sesion-1/sesion1_trabajo.Rmd` es mi versión, con mis respuestas, y compila de principio a fin.
+- [ ] La parte A está al final: la propuesta, mi comprobación, mi evaluación, mi alternativa y el seguimiento.
+- [ ] `sesion-1/notas.md` tiene las cinco partes.
+- [ ] Los mensajes de los cambios describen lo que hice.
+- [ ] No hay contraseñas, tokens ni datos personales innecesarios.
+- [ ] Pegué el enlace en la actividad «Tarea 1» de la plataforma del curso.
+
+## Cómo se evalúa
+
+| Criterio | Qué se revisa |
+|----------|---------------|
+| Organización | Nombre, descripción, README que documenta datos y decisiones, estructura de carpetas |
+| Archivo de trabajo | Está en `sesion-1/`, compila y contiene tus respuestas de clase |
+| Parte A | Pones a prueba la propuesta con los datos, explicas sus consecuencias, propones y calculas una alternativa justificada y respondes el seguimiento razonando |
+| Trazabilidad | El historial muestra los pasos con mensajes que se entienden |
+| Nota de entrega | Las cinco partes están completas |
+| Cuidado | No hay información sensible y el repositorio se abre sin iniciar sesión |
+
+No se evalúa la rapidez ni el dominio de Git: se evalúa que el repositorio se pueda revisar y que puedas explicar y defender lo que hay en tu archivo.

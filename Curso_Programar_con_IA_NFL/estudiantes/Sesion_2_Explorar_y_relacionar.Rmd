@@ -1,0 +1,578 @@
+---
+title: "Sesión 2. Explorar, verificar y encontrar relaciones"
+subtitle: "¿Cómo se distribuye el éxito y qué se relaciona con él?"
+author: "Programar con criterio en la era de la IA · Proyecto: pronosticar el éxito en la NFL"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##",
+                      fig.width = 8, fig.height = 4.5, fig.align = "center")
+options(width = 100)
+
+# Compilar siempre desde la carpeta de este archivo, aunque RStudio tenga configurado
+# otro directorio en Knit > Knit Directory. Así funcionan las rutas relativas.
+if (!is.null(knitr::current_input())) {
+  knitr::opts_knit$set(root.dir = dirname(knitr::current_input(dir = TRUE)))
+}
+```
+
+```{css, echo=FALSE}
+.tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
+.ia { border-left: 4px solid #eb6834; background: #fdf5f1; padding: 0.6em 1em; margin: 1em 0; }
+.aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
+.normal { border-left: 4px solid #1baf7a; background: #f1faf6; padding: 0.6em 1em; margin: 1em 0; }
+.mensaje { font-size: 1.2em; color: #104281; border-left: 5px solid #104281; padding: 0.3em 1em; margin: 1.2em 0; }
+.chat-usuario { background: #eef2f7; border-radius: 14px 14px 4px 14px; padding: 0.6em 1em; margin: 1em 0 1em 12%; }
+.chat-ia { background: #fffaf7; border: 1px solid #f2c9b4; border-radius: 14px 14px 14px 4px; padding: 0.6em 1em; margin: 1em 12% 1em 0; }
+.etiqueta { display: block; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b6a65; margin-bottom: 0.3em; }
+```
+
+# Para empezar
+
+En la sesión 1 construiste una base de 3,197 jugadores elegidos entre 2000 y 2014, con cada decisión de limpieza documentada. Antes de pronosticar nada, hay que entender lo que vamos a pronosticar. Hoy respondemos tres preguntas:
+
+::: {.mensaje}
+¿Cómo se distribuye el éxito? ¿Es comparable entre jugadores? ¿Qué características se relacionan con él?
+:::
+
+Al final de la sesión tendrás una lista de candidatos a predictores, cada uno con la evidencia que lo respalda y las comprobaciones que hiciste. Y habrás visto cómo una relación descriptiva puede apuntar en la dirección contraria a la que parece.
+
+## Qué vas a poder hacer al terminar
+
+1. Describir una distribución con media, mediana, cuantiles y valores extremos, y explicar qué implica que sea asimétrica.
+2. Comparar grupos con `group_by()` y `summarise()`.
+3. Calcular e interpretar correlaciones, globales y dentro de cada grupo, sin convertirlas en conclusiones causales.
+4. Verificar un resultado con un conteo o un cálculo alternativo.
+5. Analizar los valores faltantes y explicar cuándo pueden sesgar un análisis.
+
+## Organización de la sesión (90 minutos)
+
+| Minutos | Qué hacemos |
+|---------|-------------|
+| 0–10 | Preparación: la receta de la sesión 1 |
+| 10–30 | ¿Cómo se distribuye el éxito? Media, mediana, cuantiles, extremos; otras medidas de éxito |
+| 30–45 | ¿Es comparable? Posición, ronda y generación con `group_by()` |
+| 45–55 | Correlaciones globales |
+| 55–70 | Actividad central: la versión normal y la versión IA |
+| 70–80 | Dentro de cada posición; verificar |
+| 80–90 | Faltantes y sesgo de selección; Tarea 2 |
+
+---
+
+# 0. Preparación: la receta de la sesión 1
+
+Cada sesión empieza igual: cargamos los datos y aplicamos la receta de limpieza de la sesión 1. Así este documento funciona solo, de principio a fin, sin depender de lo que hiciste en otro archivo.
+
+```{r receta}
+library(dplyr)
+
+url_datos <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
+                    "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
+nfl <- tryCatch(read.csv(url_datos, sep = ";", na.strings = ""),
+                error = function(e) read.csv("datos/nfl_data.csv", sep = ";", na.strings = ""))
+
+tags_repetidos <- nfl$tag[duplicated(nfl$tag)]   # nombre + universidad repetidos
+
+base <- nfl |>
+  rename(forty = X40_yard) |>
+  mutate(drafted = as.logical(drafted)) |>
+  filter(drafted,                          # solo elegidos: los únicos con carrera registrada
+         year >= 2000, year <= 2014,       # al menos diez temporadas para acumular valor
+         simple_pos != "ST",               # sin pateadores ni despejadores
+         !(tag %in% tags_repetidos)) |>    # sin filas con la carrera de otra persona
+  mutate(nunca_jugo  = is.na(career_av),   # elegido, pero sin partidos en la NFL
+         career_av   = ifelse(nunca_jugo, 0, career_av),
+         g           = ifelse(nunca_jugo, 0, g),
+         pro_bowl    = pro_bowls >= 1,
+         speed_score = weight * 200 / forty^4) |>
+  select(player_id, name, college, year, pos, simple_pos, draft_round, draft_pick, age,
+         height, weight, hand_size, arm_length, forty, vert_leap, broad_jump,
+         bench_press, shuttle, speed_score,
+         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo)
+
+if (nrow(base) != 3197) warning("La base no tiene 3,197 jugadores: revisa la receta.")
+```
+
+---
+
+# 1. ¿Cómo se distribuye el éxito?
+
+## La pregunta y una intuición
+
+Si el éxito se pareciera a la estatura, la mayoría de los jugadores estaría cerca del promedio y unos pocos se alejarían hacia arriba o hacia abajo. ¿Es así?
+
+```{r}
+summary(base$career_av)
+quantile(base$career_av, probs = c(0.10, 0.25, 0.50, 0.75, 0.90, 0.99))
+```
+
+`quantile()` devuelve los **cuantiles**: el valor que deja por debajo a un porcentaje dado de jugadores. El 50% es la mediana; el 90%, el valor que solo supera uno de cada diez.
+
+Tres lecturas:
+
+- La **mediana** es 8 y la **media** 18: la mitad de los jugadores elegidos acumula 8 puntos o menos, pero el promedio más que duplica esa cifra.
+- El 75% de los jugadores no pasa de 28; el 1% supera los 100.
+- El máximo, 184, es más de 20 veces la mediana.
+
+¿Cuántos jugadores no aportaron nada?
+
+```{r}
+mean(base$career_av <= 0)
+```
+
+Uno de cada cinco jugadores elegidos terminó su carrera con valor cero o negativo.
+
+## Los extremos
+
+```{r}
+base |>
+  arrange(desc(career_av)) |>
+  select(year, name, pos, draft_round, draft_pick, career_av, pro_bowls) |>
+  head(10)
+```
+
+`desc()` ordena de mayor a menor. Ocho de los diez primeros son *quarterbacks*, y el primero de la lista fue elegido en la sexta ronda.
+
+## ¿Cuánto del éxito total se llevan los mejores?
+
+```{r}
+base |>
+  mutate(top10 = career_av >= quantile(career_av, 0.90)) |>
+  group_by(top10) |>
+  summarise(jugadores = n(), av_total = sum(career_av)) |>
+  mutate(parte_del_total = av_total / sum(av_total))
+```
+
+`group_by()` parte la tabla en grupos y `summarise()` calcula un resumen **por grupo**: aquí, los jugadores del 10% superior (`TRUE`) y el resto (`FALSE`). `n()` cuenta filas. Alrededor del 10% de los jugadores concentra el 40% de todo el valor de carrera.
+
+::: {.aviso}
+**Qué implica una distribución tan asimétrica para el proyecto.**
+
+1. **La media no describe al jugador típico.** Si dices "un jugador elegido acumula 18 puntos", el oyente imagina a alguien que la mayoría de los jugadores no alcanza.
+2. **Los pronósticos fallarán sobre todo con las estrellas.** Un modelo que pronostica valores esperados no puede anticipar a un Tom Brady: los errores más grandes estarán en la cola derecha. Por eso, en la sesión 4 mediremos el error de dos maneras, una que pesa mucho los errores grandes y otra que no.
+3. **Transformar la variable no es automático.** Con datos muy asimétricos a veces se usa el logaritmo, pero aquí hay valores cero y negativos (el logaritmo de 0 no existe) y el pronóstico quedaría en otras unidades. Decidiremos con evidencia, no por costumbre.
+:::
+
+## Otras formas de medir el éxito
+
+`career_av` no es la única medida posible. Comparémosla con las otras que tiene el archivo:
+
+```{r}
+base |>
+  summarise(
+    r_partidos     = cor(career_av, g),
+    r_titular      = cor(career_av, years_as_primary_starter),
+    r_pro_bowls    = cor(career_av, pro_bowls),
+    pct_pro_bowl   = mean(pro_bowl),
+    pct_nunca_titular = mean(years_as_primary_starter == 0)
+  )
+```
+
+`cor()` mide qué tan alineadas están dos variables (lo veremos con calma en la sección 3). Las cuatro medidas se mueven juntas, pero responden preguntas distintas:
+
+| Medida | Qué mide | A favor | En contra |
+|--------|----------|---------|-----------|
+| `career_av` | Valor acumulado en la carrera | Continua; pensada para comparar posiciones; existe para todos | Es una aproximación; premia las carreras largas |
+| `pro_bowls` y `pro_bowl` (al menos uno) | Reconocimiento como estrella | Fácil de explicar | Solo el 12% lo logra; depende de votaciones y de la fama de la posición |
+| `g` (partidos jugados) | Permanencia | Fácil de verificar | Un suplente puede jugar muchos partidos; mide duración, no calidad |
+| `years_as_primary_starter` | Temporadas como titular | Muy ligada al valor real | Casi la mitad tiene 0; es un conteo con muchos empates |
+
+¿Partidos jugados por posición?
+
+```{r}
+base |>
+  group_by(simple_pos) |>
+  summarise(mediana_partidos = median(g))
+```
+
+Los *quarterbacks* juegan muchos menos partidos: un suplente de esa posición casi nunca sale al campo, mientras que un suplente de otras posiciones juega en rotación. Medir el éxito con partidos castigaría a los QB por una regla del juego, no por su calidad.
+
+**Decisión del proyecto:** la medida principal de éxito será `career_av`, porque permite construir un pronóstico continuo y compararlo directamente con lo observado. Como extensión, usaremos `pro_bowl` (sí/no) para pronosticar una probabilidad.
+
+---
+
+# 2. ¿Es comparable el éxito entre jugadores?
+
+## Por posición
+
+```{r}
+base |>
+  group_by(simple_pos) |>
+  summarise(
+    jugadores    = n(),
+    mediana      = median(career_av),
+    media        = mean(career_av),
+    p90          = quantile(career_av, 0.90),
+    pct_pro_bowl = mean(pro_bowl),
+    pct_cero     = mean(career_av <= 0)
+  ) |>
+  arrange(desc(mediana))
+```
+
+- Los **linieros ofensivos** (`OL`) tienen la mediana más alta: cuando un liniero es titular, lo es durante años, y el AV premia esas temporadas.
+- Los **QB** tienen una mediana baja (4) y el percentil 90 más alto (91): es una posición de todo o nada.
+- Comparar el `career_av` de un liniero con el de un receptor sin tener en cuenta la posición mezcla dos escalas distintas. Por eso, en todos los análisis siguientes la posición estará presente.
+
+## Por ronda del draft
+
+```{r}
+base |>
+  group_by(draft_round) |>
+  summarise(
+    jugadores    = n(),
+    mediana      = median(career_av),
+    pct_pro_bowl = mean(pro_bowl),
+    pct_nunca_jugo = mean(nunca_jugo)
+  )
+```
+
+La ronda ordena el éxito con mucha claridad: la mediana de la primera ronda es 40 veces la de la séptima. Los equipos saben algo que no está en las pruebas físicas: lo vieron jugar. Guarda esta tabla; en la sesión 4 será la base de una pregunta clave: **¿añaden algo las pruebas del Combine a lo que ya sabe quien elige?**
+
+## Por generación: ¿por qué empezar en 2000 y terminar en 2014?
+
+En la sesión 1 decidimos terminar en 2014 para que todas las carreras tuvieran al menos diez temporadas. Comprobémoslo con todos los drafts desde 2000:
+
+```{r}
+generaciones <- nfl |>
+  mutate(drafted = as.logical(drafted)) |>
+  filter(drafted, year >= 2000, simple_pos != "ST", !(tag %in% tags_repetidos)) |>
+  mutate(career_av = ifelse(is.na(career_av), 0, career_av)) |>
+  group_by(year) |>
+  summarise(jugadores = n(), mediana = median(career_av), media = mean(career_av))
+
+print(generaciones, n = 25)
+```
+
+Hasta 2018 la media se mueve entre 16 y 21 puntos, aproximadamente, sin una tendencia clara; desde 2019 cae año tras año hasta 2.4 en 2024. No es que los jugadores recientes sean peores: **su carrera no ha terminado**. Incluirlos en el mismo análisis haría parecer fracasos a jugadores que apenas empiezan. Entre 2015 y 2018 la media todavía se parece a la de antes, pero muchas de esas carreras siguen sumando: el corte en 2014 es conservador a propósito.
+
+---
+
+# 3. ¿Qué se relaciona con el éxito? Correlaciones globales
+
+## Intuición
+
+La **correlación** (`r`) resume en un número entre −1 y 1 qué tan alineadas están dos variables:
+
+- cerca de 1: cuando una sube, la otra tiende a subir;
+- cerca de −1: cuando una sube, la otra tiende a bajar;
+- cerca de 0: no hay una relación **lineal** clara (puede haber otra).
+
+No tiene unidades y no dice nada de causas: dos variables pueden estar correlacionadas porque una influye en la otra, porque las dos dependen de una tercera o por azar.
+
+## Calcularla
+
+```{r}
+cor(base$weight, base$career_av)
+cor(base$forty, base$career_av)
+```
+
+La segunda sale `NA` porque `forty` tiene faltantes. Hay que decirle a `cor()` qué hacer con ellos: `use = "complete.obs"` usa solo los jugadores que tienen las dos variables.
+
+```{r}
+cor(base$forty, base$career_av, use = "complete.obs")
+```
+
+## Todas las características a la vez
+
+```{r}
+cor_globales <- base |>
+  summarise(
+    height      = cor(height, career_av),
+    weight      = cor(weight, career_av),
+    forty       = cor(forty, career_av, use = "complete.obs"),
+    vert_leap   = cor(vert_leap, career_av, use = "complete.obs"),
+    broad_jump  = cor(broad_jump, career_av, use = "complete.obs"),
+    bench_press = cor(bench_press, career_av, use = "complete.obs"),
+    shuttle     = cor(shuttle, career_av, use = "complete.obs"),
+    speed_score = cor(speed_score, career_av, use = "complete.obs"),
+    draft_pick  = cor(draft_pick, career_av)
+  )
+cor_globales
+```
+
+Las características físicas tienen correlaciones pequeñas, todas por debajo de 0.12 en valor absoluto. El número de selección (`draft_pick`) tiene la más fuerte, −0.49: cuanto más alto el número (más tarde fue elegido), menos valor de carrera. Pero `draft_pick` **no es una característica del jugador**: es la decisión de los equipos, y solo se conoce después del draft.
+
+Y hay un dato desconcertante: la correlación del tiempo en 40 yardas es **positiva**. Un tiempo más alto es una carrera más lenta. ¿Los lentos tienen más éxito?
+
+---
+
+# 4. Actividad central: la versión normal y la versión IA
+
+## Paso 1. Anticipa
+
+Antes de seguir: ¿crees que correr más lento ayuda a tener una mejor carrera en la NFL? ¿Qué otra explicación se te ocurre para una correlación positiva entre `forty` y `career_av`? *Tu respuesta:*
+
+## Paso 2. La versión IA
+
+Respuesta **redactada para este curso** imitando el estilo de estas herramientas; el código se ejecuta con tus datos.
+
+::: {.chat-usuario}
+[Tú]{.etiqueta}
+
+En mi data frame `base` (jugadores elegidos en el draft de la NFL, 2000-2014), ¿qué relación hay entre el tiempo en 40 yardas (`forty`) y el valor de carrera (`career_av`)? ¿La velocidad importa?
+:::
+
+::: {.chat-ia}
+[Asistente de IA]{.etiqueta}
+
+¡Gran pregunta! 🏈 Calculemos la correlación de Pearson entre ambas variables, eliminando los valores faltantes:
+
+```{r version-ia}
+# Correlación entre velocidad (40 yardas) y éxito profesional
+correlacion <- cor(base$forty, base$career_av, use = "complete.obs")
+n_obs <- sum(complete.cases(base$forty, base$career_av))
+
+cat(sprintf("📊 Correlación forty - career_av: r = %.3f (n = %d)\n", correlacion, n_obs))
+```
+
+**Interpretación:** la correlación es **positiva** (r ≈ 0.04): los jugadores con tiempos más altos, es decir, **más lentos**, tienden a tener carreras ligeramente más exitosas. Esto sugiere que en la NFL la experiencia, la fuerza y la inteligencia de juego pesan más que la velocidad pura.
+
+**Recomendación:** no priorizar el tiempo en 40 yardas en la evaluación de prospectos; enfocarse en atributos de fuerza y tamaño. 💪
+
+¿Quieres que haga una regresión para confirmar el efecto? 😊
+:::
+
+## Paso 3. La versión normal
+
+Una persona que ya miró la tabla por posición de la sección 2 sospecha algo antes de interpretar. Primero compara la velocidad y el éxito de cada posición:
+
+::: {.normal}
+[Versión normal]{.etiqueta}
+
+```{r}
+base |>
+  group_by(simple_pos) |>
+  summarise(forty_medio = mean(forty, na.rm = TRUE),
+            av_medio    = mean(career_av)) |>
+  arrange(forty_medio)
+```
+
+Y después calcula la correlación **dentro** de cada posición:
+
+```{r}
+base |>
+  group_by(simple_pos) |>
+  summarise(r_forty = cor(forty, career_av, use = "complete.obs"),
+            jugadores_con_forty = sum(!is.na(forty)))
+```
+:::
+
+## Paso 4. ¿En qué se nota que no lo escribió una persona?
+
+En parejas: encuentren tres rasgos de la respuesta de la IA que una persona cuidadosa no habría escrito (fíjense en el tono, en la explicación que da y en la recomendación). Para cada uno: ¿ayuda, estorba o da igual?
+
+## Paso 5. Lee antes de juzgar
+
+a) La correlación que calculó la IA, ¿está mal calculada? Compárala con la de la sección 3.
+
+b) En la primera tabla de la versión normal, ¿qué posición es la más lenta y cuál tiene el AV medio más alto? ¿Cómo explica eso la correlación global positiva?
+
+c) En la segunda tabla, ¿qué signo tiene la correlación dentro de cada posición? ¿En qué posiciones es más fuerte?
+
+d) Reescribe la interpretación de la IA en dos frases correctas. Evita palabras causales ("hace que", "provoca", "importa más").
+
+e) La IA ofrece "una regresión para confirmar el efecto". ¿Qué tendría que incluir esa regresión para no repetir el problema?
+
+Lo que acabas de ver tiene nombre: una **variable de confusión** (aquí, la posición) puede invertir el signo de una relación cuando se mezclan grupos distintos. Los linieros son los más lentos **y** los que más AV acumulan; mezclados con los receptores, crean la ilusión de que la lentitud ayuda.
+
+::: {.ia}
+**Si tienes acceso a una IA.** Pregúntale: *"¿Por qué una correlación global puede tener signo contrario a las correlaciones dentro de cada grupo?"*. Después pídele que lo compruebe con tu código. Fíjate si propone revisar los grupos **antes** de interpretar o solo después de que se lo señalas.
+:::
+
+---
+
+# 5. Dentro de cada posición
+
+Repetimos el cálculo para todas las características, por posición:
+
+```{r}
+cor_por_posicion <- base |>
+  group_by(simple_pos) |>
+  summarise(
+    weight      = cor(weight, career_av),
+    forty       = cor(forty, career_av, use = "complete.obs"),
+    vert_leap   = cor(vert_leap, career_av, use = "complete.obs"),
+    broad_jump  = cor(broad_jump, career_av, use = "complete.obs"),
+    bench_press = cor(bench_press, career_av, use = "complete.obs"),
+    speed_score = cor(speed_score, career_av, use = "complete.obs")
+  )
+cor_por_posicion
+```
+
+Lo que se ve, con prudencia:
+
+- **`forty`**: negativa en las ocho posiciones. Dentro de una misma posición, los más rápidos tienden a acumular algo más de valor. La relación es más fuerte en TE, RB y OL, y casi nula en WR y QB.
+- **`speed_score`**: positiva en todas las posiciones y, en la mayoría, la más fuerte de la tabla. Tiene sentido: combina velocidad y peso, y correr rápido pesando mucho es más raro.
+- **`weight`**: pequeña y de signo cambiante: algo positiva en LB y WR, negativa en RB, casi cero en el resto. Su correlación global (0.11) venía sobre todo de que las posiciones pesadas acumulan más AV.
+- Los **saltos** tienen relaciones positivas pequeñas.
+
+**Lo que no podemos decir:** que entrenar la velocidad aumente el valor de carrera; que estas relaciones se mantengan en otras generaciones; ni que sean grandes. Una correlación de −0.2 deja la mayor parte de la variación sin explicar. Son **pistas** para elegir predictores, no conclusiones.
+
+---
+
+# 6. Verificar: comprobaciones independientes
+
+Antes de creer una cifra, compruébala por otro camino.
+
+```{r}
+# 1. Los grupos suman el total
+base |> count(simple_pos) |> summarise(total = sum(n))
+
+# 2. Una media, a mano
+sum(base$career_av) / nrow(base)
+mean(base$career_av)
+
+# 3. ¿Cuántos jugadores hay detrás de cada correlación?
+base |> summarise(con_forty = sum(!is.na(forty)),
+                  con_vert  = sum(!is.na(vert_leap)),
+                  con_bench = sum(!is.na(bench_press)))
+
+# 4. La correlación global de forty, por un método que no depende de valores extremos
+cor(base$forty, base$career_av, use = "complete.obs", method = "spearman")
+```
+
+`count()` es un atajo de `group_by()` + `summarise(n = n())`. La correlación de Spearman usa el orden de los valores en lugar de los valores mismos; si las dos versiones cuentan la misma historia (aquí, casi cero), la conclusión no depende de unas pocas estrellas. Y cada correlación de la tabla se calculó con un número distinto de jugadores: la de `bench_press` con dos tercios de la base. No son del todo comparables entre sí.
+
+---
+
+# 7. Faltantes y sesgo de selección
+
+## ¿Faltan al azar?
+
+```{r}
+base |>
+  summarise(forty = mean(is.na(forty)), vert_leap = mean(is.na(vert_leap)),
+            broad_jump = mean(is.na(broad_jump)), bench_press = mean(is.na(bench_press)),
+            shuttle = mean(is.na(shuttle)), age = mean(is.na(age)))
+```
+
+Si los faltantes fueran al azar, eliminarlos solo reduciría la muestra. Pero:
+
+```{r}
+base |>
+  group_by(draft_round) |>
+  summarise(pct_sin_forty = mean(is.na(forty)))
+
+base |>
+  group_by(sin_forty = is.na(forty)) |>
+  summarise(jugadores = n(), av_medio = mean(career_av))
+```
+
+Los jugadores sin tiempo en 40 yardas son más frecuentes en las últimas rondas y acumulan, en promedio, mucho menos valor. Un análisis que los elimine estudia a un grupo más exitoso que la base completa. Es lo que pasó con la versión IA de la sesión 1.
+
+## La columna `age`: un faltante que delata el resultado
+
+```{r}
+table(sin_edad = is.na(base$age), nunca_jugo = base$nunca_jugo)
+```
+
+Los 180 jugadores sin edad son, **todos**, jugadores que nunca jugaron. La fuente registra la edad junto con la carrera profesional, y si no hubo carrera, a veces tampoco hay edad. La edad es un dato que sí se conoce el día del draft, pero en este archivo su **faltante** revela el resultado que queremos pronosticar. Si usáramos `age` como predictor y elimináramos a quienes no la tienen, el modelo se entrenaría sin una buena parte de los fracasos. Por ahora queda fuera de los predictores.
+
+## Quiénes no están en la base
+
+- **Los no elegidos.** El archivo tiene 5,929 jugadores no elegidos sin datos de carrera. Algunos firmaron después con un equipo y tuvieron buenas carreras, pero no podemos saberlo con este archivo. Nuestro indicador solo podrá decir algo de jugadores que **serán elegidos**.
+- **Los que no fueron al Combine.** El archivo parte de los resultados del Combine; un jugador elegido sin haber sido invitado no aparece.
+- **Los afectados por errores de unión.** Kevin Williams, elegido en 2003 en el puesto 9, aparece como no elegido porque su información se pegó a otra persona con el mismo nombre y universidad (sesión 1).
+
+Esto se llama **sesgo de selección**: la base no es una muestra al azar de "jugadores de fútbol americano", sino de jugadores invitados al Combine y elegidos en el draft. Las conclusiones valen para ese grupo.
+
+---
+
+# 8. Lo que sabemos y lo que todavía no sabemos
+
+| Lo que sabemos | Lo que todavía no sabemos |
+|----------------|---------------------------|
+| | |
+| | |
+| | |
+
+Pregunta para cerrar: con lo que viste hoy, ¿qué tres características propondrías como predictores para la sesión 4? ¿Qué evidencia tienes de cada una?
+
+---
+
+# Tarea 2 (después de clase): una lista de predictores bien justificada
+
+::: {.tarea}
+**Tiempo estimado:** 30–45 minutos.
+
+**Qué entregas:** `sesion2_tarea.Rmd` (y, si quieres, su HTML) en la carpeta `sesion-2/` de tu repositorio, con la parte A, la parte B y una bitácora; y `sesion-2/notas.md` actualizado.
+
+**Cómo lo entregas:** pegas el enlace a tu repositorio en la actividad «Tarea 2» de la plataforma del curso.
+
+**Qué se valora:** que cada afirmación sobre una relación esté respaldada por un cálculo que puedas explicar, que compruebes tus resultados por otro camino y que distingas una relación descriptiva de una causa.
+:::
+
+Crea `sesion2_tarea.Rmd` desde RStudio (*File > New File > R Markdown...*, salida HTML). Borra el contenido de ejemplo y empieza con un bloque que contenga **la receta completa** de la sección 0: tu tarea debe compilar sola.
+
+## Parte A. "Las pruebas que más se relacionan con el éxito"
+
+El director de scouting te manda su análisis:
+
+> "Ordené las medidas por su correlación con `career_av` en toda la base. Las más relacionadas con el éxito son el press de banca, el peso y la longitud de brazos; el tiempo en 40 yardas casi no importa. Propongo que el modelo use solo esas tres y que dejemos fuera la velocidad."
+
+**1. Anticipa.** Con lo que viste en clase, ¿qué esperas encontrar si revisas su propuesta?
+
+**2. Implementa su análisis tal como está:**
+
+```r
+base |>
+  summarise(
+    bench_press = cor(bench_press, career_av, use = "complete.obs"),
+    weight      = cor(weight, career_av),
+    arm_length  = cor(arm_length, career_av, use = "complete.obs"),
+    forty       = cor(forty, career_av, use = "complete.obs")
+  )
+```
+
+**3. Comprueba.** Calcula las mismas cuatro correlaciones **dentro de cada posición** y cuántos jugadores hay detrás de cada una. Presenta los resultados en una tabla.
+
+**4. Evalúa la decisión.** En cuatro o cinco frases: ¿el orden del director se mantiene dentro de las posiciones? ¿Qué consecuencias tendría construir el modelo solo con esas tres medidas? ¿Qué propones en su lugar y por qué? Ninguna correlación es una causa: redacta sin lenguaje causal.
+
+**5. Seguimiento.**
+
+a) ¿En qué posición la correlación entre peso y `career_av` es negativa? Propón una explicación razonable y di cómo podrías ponerla a prueba con los datos.
+
+b) `speed_score` combina peso y velocidad. Compara su correlación dentro de cada posición con la de `weight` y con la de `forty` por separado. ¿Qué aporta combinarlas?
+
+## Parte B. Tu exploración
+
+1. Identifica **al menos tres** características que puedan servir como predictores del éxito y que se conozcan en el momento del draft. Para cada una, muestra el cálculo que la respalda (dentro de cada posición) y cuántos jugadores hay detrás.
+2. Documenta **una relación que esperabas encontrar** y **otra que te sorprendió**, con el código que la muestra.
+3. Describe **dos comprobaciones** que hiciste para verificar tus resultados (un conteo, un cálculo alternativo, un caso concreto).
+4. Escribe una frase sobre una limitación de tus conclusiones relacionada con los faltantes o con el sesgo de selección.
+
+## Bitácora y GitHub
+
+Al final de tu archivo, una sección `# Bitácora` con:
+
+1. **Qué quería averiguar.**
+2. **Qué hice:** los pasos, con una línea por bloque de código.
+3. **Qué comprobé y cómo.**
+4. **Qué decisiones tomé y qué descarté.**
+5. **Si usé IA:** qué le pedí, qué conservé, qué cambié y por qué. Si no la usaste, dilo.
+
+Después:
+
+1. Compila con **Knit** y revisa que todo se ejecute de principio a fin.
+2. En GitHub, entra a `sesion-2/`, **Add file > Upload files**, sube `sesion2_tarea.Rmd` (y su HTML, si quieres). Mensaje: *Agregar exploración de la sesión 2*.
+3. Edita `sesion-2/notas.md` con las cinco partes de siempre (lo que querías conseguir, archivos, comprobaciones, cambios conservados o descartados, lo que puedes afirmar). Mensaje: *Nota de entrega de la sesión 2*.
+4. Si modificaste tu `sesion1_trabajo.Rmd` después de entregarlo, súbelo de nuevo **con el mismo nombre**: GitHub registrará una versión nueva y conservará la anterior en el historial. Escribe un mensaje que diga qué cambió.
+
+## Cómo se evalúa
+
+| Criterio | Qué se revisa |
+|----------|---------------|
+| Parte A | Pones a prueba la propuesta por posición, explicas por qué cambia el orden y propones una alternativa justificada; el seguimiento razona con datos |
+| Parte B | Al menos tres predictores con evidencia dentro de posición; una relación esperada y una sorprendente, con código |
+| Verificación | Dos comprobaciones independientes descritas y ejecutadas |
+| Lenguaje | No hay conclusiones causales a partir de correlaciones |
+| Reproducibilidad | El archivo empieza con la receta y compila de principio a fin |
+| Trazabilidad | Bitácora completa; mensajes de cambio descriptivos; `notas.md` actualizado |

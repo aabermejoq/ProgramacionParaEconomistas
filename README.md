@@ -19,6 +19,6 @@ El curso no es exhaustivo, pero sí suficiente para empezar a ser autónomo.
 
 ## Curso complementario: Programar con criterio en la era de la IA
 
-Cinco sesiones de 90 minutos en R Markdown, para personas que nunca han programado, sobre por qué sigue siendo necesario aprender a programar cuando una IA puede escribir el código: leerlo, detectar sus decisiones, comprobar resultados y responsabilizarse de lo que se presenta. El caso de trabajo son los datos del NFL Scouting Combine (2009-2019). Los cinco R Markdown para estudiantes, con todas las instrucciones, y los datos están en [`Curso_Programar_con_IA_NFL/estudiantes/`](Curso_Programar_con_IA_NFL/estudiantes/).
+Cinco sesiones de 90 minutos en R Markdown, para personas que nunca han programado, organizadas como un proyecto de pronóstico: ¿qué características de un jugador, conocidas en el draft, permiten pronosticar su éxito en la NFL? Los estudiantes cargan y depuran los datos, exploran relaciones, visualizan, estiman modelos (lineal, logístico, probit y Elastic Net) y evalúan su indicador fuera de muestra, con un mismo criterio en todo el curso: si la IA escribe el código, hay que entenderlo, comprobarlo y responsabilizarse de lo que se presenta. Los datos son `nfl_data.csv` de [phcs971/nfl-draft-dataset](https://github.com/phcs971/nfl-draft-dataset) (licencia MIT). Los cinco R Markdown para estudiantes, con todas las instrucciones, y una copia de respaldo de los datos están en [`Curso_Programar_con_IA_NFL/estudiantes/`](Curso_Programar_con_IA_NFL/estudiantes/).
 
 Correo : "aabermejo@tec.mx"

@@ -1,0 +1,583 @@
+---
+title: "Sesión 5. El indicador de éxito y su evaluación"
+subtitle: "Del modelo a una herramienta de pronóstico que se pueda defender"
+author: "Programar con criterio en la era de la IA · Proyecto: pronosticar el éxito en la NFL"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##",
+                      fig.width = 8, fig.height = 4.8, fig.align = "center")
+options(width = 100)
+
+# Compilar siempre desde la carpeta de este archivo, aunque RStudio tenga configurado
+# otro directorio en Knit > Knit Directory. Así funcionan las rutas relativas.
+if (!is.null(knitr::current_input())) {
+  knitr::opts_knit$set(root.dir = dirname(knitr::current_input(dir = TRUE)))
+}
+```
+
+```{css, echo=FALSE}
+.tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
+.ia { border-left: 4px solid #eb6834; background: #fdf5f1; padding: 0.6em 1em; margin: 1em 0; }
+.aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
+.normal { border-left: 4px solid #1baf7a; background: #f1faf6; padding: 0.6em 1em; margin: 1em 0; }
+.mensaje { font-size: 1.2em; color: #104281; border-left: 5px solid #104281; padding: 0.3em 1em; margin: 1.2em 0; }
+.chat-usuario { background: #eef2f7; border-radius: 14px 14px 4px 14px; padding: 0.6em 1em; margin: 1em 0 1em 12%; }
+.chat-ia { background: #fffaf7; border: 1px solid #f2c9b4; border-radius: 14px 14px 14px 4px; padding: 0.6em 1em; margin: 1em 12% 1em 0; }
+.etiqueta { display: block; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b6a65; margin-bottom: 0.3em; }
+```
+
+# Para empezar: el encargo final
+
+El director general te pidió un indicador que, con lo que se sabe de un jugador el día del draft, diga qué carrera esperar, y saber qué medidas valen la pena. Hoy cierras el proyecto: reproduces el análisis de principio a fin, eliges el modelo, lo evalúas con jugadores que no vio y lo comunicas con sus límites.
+
+::: {.mensaje}
+El producto es un **indicador exploratorio** de desempeño profesional: una herramienta para ordenar y discutir, no una medida del talento de un jugador ni una garantía de su futuro.
+:::
+
+Tu proyecto final debe incluir:
+
+| # | Elemento | Dónde está en el ejemplo resuelto |
+|---|----------|-----------------------------------|
+| 1 | Una pregunta de pronóstico claramente definida | 1.1 |
+| 2 | La definición y justificación de la variable de éxito | 1.2 |
+| 3 | Una base explorada y depurada con criterios documentados | 1.3 |
+| 4 | Estadísticas descriptivas, correlaciones y visualizaciones relevantes | 1.4 |
+| 5 | Una selección razonada de predictores | 1.5 |
+| 6 | Al menos un modelo de referencia y un modelo alternativo | 1.6 |
+| 7 | Una evaluación fuera de muestra | 1.7 |
+| 8 | Una gráfica final que compare pronósticos y resultados | 2 (y 3 en la variante binaria) |
+| 9 | Una interpretación de qué variables parecen más informativas | 1.8 |
+| 10 | Una discusión breve de limitaciones y del uso del indicador | 1.9 |
+
+## Organización de la sesión (90 minutos)
+
+| Minutos | Qué hacemos |
+|---------|-------------|
+| 0–10 | El encargo final y lo que debe tener tu proyecto |
+| 10–30 | Ejemplo resuelto: pregunta, datos, modelos y evaluación |
+| 30–45 | La gráfica final: observados frente a pronosticados, y los errores |
+| 45–55 | Variante binaria: probabilidades y umbral |
+| 55–65 | Actividad central: las conclusiones que escribió la IA |
+| 65–85 | Trabajo en tu proyecto |
+| 85–90 | Defensa breve en parejas; cómo entregar |
+
+---
+
+# 0. Preparación
+
+```{r receta}
+library(dplyr)
+library(ggplot2)
+
+url_datos <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
+                    "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
+nfl <- tryCatch(read.csv(url_datos, sep = ";", na.strings = ""),
+                error = function(e) read.csv("datos/nfl_data.csv", sep = ";", na.strings = ""))
+
+tags_repetidos <- nfl$tag[duplicated(nfl$tag)]   # nombre + universidad repetidos
+
+base <- nfl |>
+  rename(forty = X40_yard) |>
+  mutate(drafted = as.logical(drafted)) |>
+  filter(drafted,                          # solo elegidos: los únicos con carrera registrada
+         year >= 2000, year <= 2014,       # al menos diez temporadas para acumular valor
+         simple_pos != "ST",               # sin pateadores ni despejadores
+         !(tag %in% tags_repetidos)) |>    # sin filas con la carrera de otra persona
+  mutate(nunca_jugo  = is.na(career_av),   # elegido, pero sin partidos en la NFL
+         career_av   = ifelse(nunca_jugo, 0, career_av),
+         g           = ifelse(nunca_jugo, 0, g),
+         pro_bowl    = pro_bowls >= 1,
+         speed_score = weight * 200 / forty^4) |>
+  select(player_id, name, college, year, pos, simple_pos, draft_round, draft_pick, age,
+         height, weight, hand_size, arm_length, forty, vert_leap, broad_jump,
+         bench_press, shuttle, speed_score,
+         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo)
+
+if (nrow(base) != 3197) warning("La base no tiene 3,197 jugadores: revisa la receta.")
+
+# Muestra del modelo y división temporal (sesión 4)
+modelo_datos  <- base |> filter(!is.na(forty), !is.na(vert_leap), !is.na(broad_jump))
+entrenamiento <- modelo_datos |> filter(year <= 2010)
+prueba        <- modelo_datos |> filter(year >= 2011)
+
+mae  <- function(observado, pronostico) mean(abs(observado - pronostico))
+rmse <- function(observado, pronostico) sqrt(mean((observado - pronostico)^2))
+
+estilo <- theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"), plot.title.position = "plot",
+        plot.subtitle = element_text(color = "#52514e"),
+        plot.caption = element_text(color = "#898781"), panel.grid.minor = element_blank())
+fuente <- "Datos: phcs971/nfl-draft-dataset (Combine, draft y Pro Football Reference)."
+```
+
+---
+
+# 1. Ejemplo resuelto
+
+Este ejemplo es el esqueleto de un proyecto completo. Tu proyecto debe tener las mismas partes, con tus propias decisiones (sección 5).
+
+## 1.1 Pregunta de pronóstico
+
+> Con las medidas físicas y atléticas que se conocen antes del draft, ¿cuánto valor de carrera (`career_av`) cabe esperar de un jugador que será elegido? Como comparación: ¿cuánto mejora el pronóstico si además se conoce su número de selección?
+
+La pregunta fija el **momento** del pronóstico (antes del draft), la **población** (jugadores que serán elegidos y que pasaron por el Combine) y el **resultado** (valor de carrera).
+
+## 1.2 Variable de éxito
+
+`career_av`: valor aproximado acumulado en la carrera, según Pro Football Reference. Se eligió porque es continua, existe para todos los jugadores elegidos y está pensada para comparar posiciones. Los jugadores elegidos que nunca jugaron cuentan como 0. Solo se usan drafts hasta 2014 para que todas las carreras hayan tenido al menos diez temporadas. Su distribución es muy asimétrica (mediana 8, media 18): los errores más grandes estarán en las estrellas.
+
+## 1.3 Base y limpieza
+
+```{r}
+data.frame(
+  paso = c("Archivo completo", "Elegidos en el draft 2000-2014, sin equipos especiales ni tags repetidos",
+           "Con 40 yardas, salto vertical y salto largo", "Entrenamiento (drafts 2000-2010)",
+           "Prueba (drafts 2011-2014)"),
+  jugadores = c(nrow(nfl), nrow(base), nrow(modelo_datos), nrow(entrenamiento), nrow(prueba))
+)
+```
+
+Decisiones: los elegidos sin carrera registrada valen 0 (nunca jugaron); se excluyen las filas con `tag` repetido porque su carrera pertenece a otra persona; se exige tener tres pruebas, lo que deja fuera a jugadores que en promedio tuvieron carreras peores (limitación).
+
+## 1.4 Exploración
+
+```{r}
+bind_rows(entrenamiento |> mutate(conjunto = "entrenamiento"),
+          prueba |> mutate(conjunto = "prueba")) |>
+  group_by(conjunto) |>
+  summarise(jugadores = n(), av_media = mean(career_av), av_mediana = median(career_av),
+            pct_pro_bowl = mean(pro_bowl), pct_nunca_jugo = mean(nunca_jugo))
+```
+
+Los dos conjuntos se parecen, aunque en la prueba hay algo más de éxito (más Pro Bowl, menos jugadores que nunca jugaron). Conviene recordarlo: el error en la prueba depende también de qué tan difíciles sean esos jugadores. Dentro de cada posición, las medidas más relacionadas con el éxito fueron la velocidad (sola o ajustada por peso) y el salto largo; las correlaciones no pasan de 0.37 en valor absoluto (sesiones 2 y 3).
+
+## 1.5 Predictores
+
+- **Antes del draft:** posición, estatura, peso, 40 yardas, salto vertical y salto largo.
+- **Después del draft (comparación):** posición y logaritmo del número de selección.
+- **Excluidos:** `bench_press` y `shuttle` (faltan para un tercio y casi todos los QB); `age` (falta justo para quienes nunca jugaron); y toda variable de la carrera profesional (fuga de información).
+
+## 1.6 Modelos
+
+```{r}
+referencia <- entrenamiento |>
+  group_by(simple_pos) |>
+  summarise(pred_referencia = mean(career_av))
+prueba <- prueba |> left_join(referencia, by = "simple_pos")
+
+modelo_pre  <- lm(career_av ~ simple_pos + height + weight + forty + vert_leap + broad_jump,
+                  data = entrenamiento)
+modelo_post <- lm(career_av ~ simple_pos + log(draft_pick), data = entrenamiento)
+
+prueba$pred_pre  <- predict(modelo_pre,  newdata = prueba)
+prueba$pred_post <- predict(modelo_post, newdata = prueba)
+```
+
+El modelo **principal** es `modelo_pre`: responde la pregunta con características del jugador. `modelo_post` sirve para saber cuánta información hay en la evaluación de los equipos, más allá de las medidas.
+
+## 1.7 Evaluación fuera de muestra
+
+```{r}
+data.frame(
+  modelo = c("Referencia (media por posición)", "Antes del draft (principal)", "Después del draft"),
+  mae  = c(mae(prueba$career_av, prueba$pred_referencia), mae(prueba$career_av, prueba$pred_pre),
+           mae(prueba$career_av, prueba$pred_post)),
+  rmse = c(rmse(prueba$career_av, prueba$pred_referencia), rmse(prueba$career_av, prueba$pred_pre),
+           rmse(prueba$career_av, prueba$pred_post))
+) |> mutate(across(c(mae, rmse), ~ round(.x, 2)))
+```
+
+Antes del draft, el indicador mejora a la referencia en unas décimas de MAE y en unos 0.7 puntos de RMSE. Después del draft, el error baja unos tres puntos más.
+
+¿Sirve un indicador que se equivoca, en promedio, por 17 puntos? Depende de para qué. Veamos si al menos **ordena**: dividimos a los jugadores de prueba en cinco grupos según su pronóstico y comparamos lo que pronosticamos con lo que pasó.
+
+```{r}
+prueba |>
+  mutate(quintil_pronostico = ntile(pred_pre, 5)) |>
+  group_by(quintil_pronostico) |>
+  summarise(jugadores = n(), pronostico_medio = mean(pred_pre),
+            observado_medio = mean(career_av), pct_pro_bowl = mean(pro_bowl))
+```
+
+`ntile(x, 5)` reparte a los jugadores en cinco grupos del mismo tamaño, de menor a mayor pronóstico. El quintil más alto acumuló, en promedio, más del doble de valor que el más bajo y llegó al Pro Bowl con mucha más frecuencia. El indicador falla jugador por jugador, pero **ordena grupos**.
+
+## 1.8 ¿Qué variables parecen informativas?
+
+Los coeficientes están en unidades distintas (libras, segundos, pulgadas). Para compararlos, calculamos cuánto cambia el pronóstico si una variable aumenta en una **desviación estándar** (un cambio "típico" en el entrenamiento), con las demás fijas:
+
+```{r}
+predictores <- c("height", "weight", "forty", "vert_leap", "broad_jump")
+
+data.frame(variable    = predictores,
+           coeficiente = coef(modelo_pre)[predictores],
+           desv_est    = sapply(entrenamiento[predictores], sd)) |>
+  mutate(cambio_por_1_de = coeficiente * desv_est) |>
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
+```
+
+`sapply()` aplica una función (aquí, `sd`) a cada columna. Lectura con cuidado:
+
+- **Velocidad y peso juntos.** A igual peso, correr más rápido se asocia con un pronóstico más alto; a igual tiempo, pesar más también. Es la idea del `speed_score`: lo valioso es ser rápido **para tu peso**. Peso y tiempo están muy correlacionados, así que su efecto por separado ("una desviación más de peso sin cambiar el tiempo") describe una combinación poco común.
+- **Salto largo**: aporta algo; el salto vertical, menos.
+- **Estatura**: casi nada, una vez considerada la posición.
+- En la sesión 4, Elastic Net seleccionó de forma estable la posición, el peso, `speed_score` y los saltos, y descartaba `forty` cuando `speed_score` estaba presente: la información de la velocidad es la misma.
+
+Nada de esto prueba que esas características **causen** el éxito: describen asociaciones que sirvieron para pronosticar en jugadores nuevos.
+
+## 1.9 Limitaciones y uso
+
+- **Poca capacidad predictiva antes del draft.** El Combine aporta información, pero poca: casi toda la variación del éxito depende de cosas que estas medidas no capturan.
+- **Selección.** Solo vale para jugadores que serán elegidos y que hicieron las pruebas; no dice nada de los no elegidos.
+- **Comparabilidad.** El `career_av` depende de la posición y de la duración de la carrera; la posición está en el modelo, pero las oportunidades de jugar (equipo, lesiones, competencia) no.
+- **Generaciones.** El modelo aprendió con 2000–2010; si la NFL cambia (más pases, nuevas posiciones), las relaciones pueden cambiar.
+- **Uso razonable:** ordenar a los prospectos de una posición y señalar perfiles atléticos poco comunes para revisar con más atención. **Uso no razonable:** decidir a quién elegir con base solo en el indicador, o afirmar que un jugador "valdrá" una cifra concreta.
+
+---
+
+# 2. La gráfica final: observados frente a pronosticados
+
+## Cómo se lee
+
+Cada punto es un jugador de prueba: en el eje horizontal, lo que pronosticamos; en el vertical, lo que pasó. La **línea de 45 grados** marca el pronóstico perfecto (observado = pronosticado). Un punto **por encima** de la línea es un jugador que superó el pronóstico; **por debajo**, uno que se quedó corto. La distancia vertical a la línea es el error.
+
+```{r}
+resultados <- bind_rows(
+  prueba |> mutate(pronostico = pred_pre,  momento = "Antes del draft: posición y Combine"),
+  prueba |> mutate(pronostico = pred_post, momento = "Después del draft: posición y selección")
+) |>
+  select(name, simple_pos, year, draft_pick, career_av, pronostico, momento)
+
+destacados <- resultados |>
+  filter(name %in% c("Russell Wilson", "Richard Sherman", "Aaron Donald", "Dion Jordan"))
+```
+
+```{r grafica-final, fig.width=10, fig.height=5.8}
+grafica_final <- ggplot(resultados, aes(x = pronostico, y = career_av)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "#52514e") +
+  geom_point(alpha = 0.3, size = 1.3, color = "#2a78d6") +
+  geom_point(data = destacados, color = "#eb6834", size = 2.6) +
+  geom_text(data = destacados, aes(label = name), hjust = -0.12, size = 3.3) +
+  facet_wrap(~ momento) +
+  coord_equal(xlim = c(-5, 145), ylim = c(-5, 145)) +
+  labs(title = "Antes del draft, los pronósticos apenas se alejan del promedio; después, ordenan mejor",
+       subtitle = paste("Valor de carrera observado y pronosticado de 686 jugadores elegidos entre 2011 y 2014,",
+                        "que no se usaron para estimar los modelos. Línea discontinua: pronóstico perfecto.",
+                        sep = "\n"),
+       x = "Valor de carrera pronosticado", y = "Valor de carrera observado (career_av)",
+       caption = fuente) +
+  estilo
+grafica_final
+```
+
+`coord_equal()` usa la misma escala en los dos ejes: sin eso, la línea de 45 grados no se vería a 45 grados y la gráfica engañaría.
+
+Qué muestra:
+
+- **Antes del draft**, los pronósticos se concentran en una franja estrecha (entre unos 6 y 41 puntos) mientras que lo observado va de 0 a 139: el modelo casi no distingue entre jugadores y se refugia cerca del promedio. Es lo que debe hacer un modelo honesto con poca información.
+- **Después del draft**, la franja se abre (de 0 a unos 84): la selección separa mejor a los jugadores.
+- **Ninguno anticipa a las estrellas.** Russell Wilson (selección 75) y Richard Sherman (154) quedan muy por encima de la línea en los dos paneles. Dion Jordan, elegido tercero, queda muy por debajo en el panel de la derecha: el draft también se equivoca, y el modelo hereda sus errores.
+
+## Los errores
+
+```{r, fig.width=10, fig.height=4}
+resultados |>
+  mutate(error = career_av - pronostico) |>
+  ggplot(aes(x = error)) +
+  geom_histogram(binwidth = 5, fill = "#2a78d6", color = "white") +
+  geom_vline(xintercept = 0, linewidth = 0.8) +
+  facet_wrap(~ momento) +
+  labs(title = "La mayoría de los errores son pequeños y negativos; unos pocos, enormes y positivos",
+       subtitle = "Error = observado − pronosticado. A la izquierda de 0: el jugador rindió menos de lo pronosticado.",
+       x = "Error de pronóstico (puntos de career_av)", y = "Jugadores", caption = fuente) +
+  estilo
+```
+
+Con un resultado tan asimétrico, un modelo que pronostica valores esperados sobrestima un poco a la mayoría (que acumula poco) y subestima mucho a unos pocos (las estrellas). Por eso el RMSE, que castiga los errores grandes, siempre será mucho mayor que el MAE.
+
+---
+
+# 3. Variante binaria: probabilidades de Pro Bowl
+
+Si tu modelo principal pronostica `pro_bowl`, el resultado observado solo vale sí o no y el pronóstico es una probabilidad. **No tiene sentido una línea de 45 grados**: ningún jugador "vale" 0.23 Pro Bowls. Lo que se compara es cómo se reparten las probabilidades entre los que fueron y los que no.
+
+```{r}
+logit_pre <- glm(pro_bowl ~ simple_pos + height + weight + forty + vert_leap + broad_jump,
+                 family = binomial, data = entrenamiento)
+prueba$prob_pre <- predict(logit_pre, newdata = prueba, type = "response")
+tasa_base <- mean(entrenamiento$pro_bowl)
+```
+
+```{r grafica-binaria, fig.width=9, fig.height=5}
+prueba |>
+  mutate(resultado = ifelse(pro_bowl, "Fue al Pro Bowl", "No fue al Pro Bowl")) |>
+  ggplot(aes(x = resultado, y = prob_pre)) +
+  geom_jitter(width = 0.2, height = 0, alpha = 0.35, color = "#2a78d6") +
+  geom_boxplot(fill = NA, outlier.shape = NA, width = 0.5) +
+  geom_hline(yintercept = tasa_base, linetype = "dashed", color = "#eb6834") +
+  geom_hline(yintercept = 0.5, linetype = "dotted", color = "#52514e") +
+  labs(title = "Los futuros Pro Bowl reciben algo más de probabilidad, con mucho solapamiento",
+       subtitle = paste("Probabilidad pronosticada antes del draft para los 686 jugadores de prueba (2011-2014).",
+                        "Línea naranja: umbral igual a la tasa base del entrenamiento (0.12); línea punteada: umbral 0.5.",
+                        sep = "\n"),
+       x = NULL, y = "Probabilidad pronosticada de ir al Pro Bowl", caption = fuente) +
+  estilo
+```
+
+Si el modelo ordenara perfectamente, todos los puntos de la izquierda estarían por encima de todos los de la derecha. El solapamiento es lo que resume el AUC (alrededor de 0.64 en la sesión 4).
+
+**El umbral.** Con 0.5, casi ningún jugador queda por encima: el modelo no marcaría a casi nadie. Con la tasa base del entrenamiento, se marca a muchos más. Lo que cambia:
+
+```{r}
+matriz <- function(umbral) {
+  marcado <- prueba$prob_pre >= umbral
+  data.frame(umbral = round(umbral, 3),
+             verdaderos_positivos = sum(marcado & prueba$pro_bowl),
+             falsos_positivos     = sum(marcado & !prueba$pro_bowl),
+             falsos_negativos     = sum(!marcado & prueba$pro_bowl),
+             sensibilidad         = round(mean(marcado[prueba$pro_bowl]), 2),
+             especificidad        = round(mean(!marcado[!prueba$pro_bowl]), 2))
+}
+bind_rows(matriz(0.5), matriz(tasa_base))
+```
+
+Bajar el umbral cambia **falsos negativos** (futuros Pro Bowl que no marcamos) por **falsos positivos** (jugadores marcados que no llegaron). Qué umbral usar depende de qué error es más caro para el equipo, y debe decidirse antes de mirar la prueba.
+
+---
+
+# 4. Actividad central: las conclusiones que escribió la IA
+
+Le pasamos a un asistente la tabla de la sección 1.7 y la gráfica final, y le pedimos que redactara las conclusiones. Respuesta **redactada para este curso** imitando el estilo de estas herramientas.
+
+::: {.chat-usuario}
+[Tú]{.etiqueta}
+
+Redacta las conclusiones de mi proyecto para el director general. Resultados: modelo antes del draft, MAE 17.46 (referencia 17.62); después del draft, MAE 14.31. Coeficiente de `forty`: −28.3. AUC del modelo de Pro Bowl: 0.64, exactitud con umbral 0.5: 85.7%.
+:::
+
+::: {.chat-ia}
+[Asistente de IA]{.etiqueta}
+
+**Conclusiones** 🏈📊
+
+1. **La velocidad es clave para el éxito en la NFL.** Nuestro modelo demuestra que reducir el tiempo en 40 yardas en 0.1 segundos **aumenta** el valor de carrera de un jugador en 2.8 puntos.
+2. **El modelo de Pro Bowl alcanza una precisión del 85.7%**, lo que lo convierte en una herramienta confiable para identificar futuras estrellas.
+3. **El Combine no sirve para pronosticar**: una vez conocida la selección del draft, las pruebas físicas no aportan nada, por lo que recomendamos dejar de invertir en evaluaciones atléticas.
+4. El indicador puede aplicarse a **cualquier prospecto universitario** para estimar su valor futuro con un margen de error de ±17 puntos.
+
+**Recomendación:** priorizar a los jugadores con mejores tiempos en 40 yardas en las primeras rondas del próximo draft. 🚀
+:::
+
+## Paso 1. Encuentra los problemas
+
+En parejas: para cada una de las cuatro conclusiones y la recomendación, señala qué está mal. Pistas de dónde mirar: lenguaje causal, una métrica engañosa, una conclusión que confunde "no añade información **después** del draft" con "no sirve", la población a la que se aplica y lo que significa un MAE.
+
+## Paso 2. Reescribe
+
+Escribe las conclusiones correctas en **cinco frases como máximo**, sin emojis y sin lenguaje causal. Deben decir qué pronostica el indicador, qué tan bien (comparado con la referencia), qué variables aportan información, para quién vale y para qué no debe usarse.
+
+## Paso 3. Seguimiento
+
+¿Qué frase de tu versión sería la más difícil de defender si el director te pregunta "¿cómo lo sabes?"? ¿Qué cálculo la respalda?
+
+::: {.ia}
+**Si tienes acceso a una IA.** Dale tus propias cinco frases y pídele que encuentre afirmaciones que tus resultados no respalden. Usar la IA como revisora, no como autora, es una buena forma de aprovecharla: tú decides qué cambias.
+:::
+
+---
+
+# 5. Tu proyecto final
+
+::: {.tarea}
+**Qué entregas:** `sesion-5/proyecto_final.Rmd`, su HTML y sus gráficas (en `sesion-5/graficas/`), más `sesion-5/notas.md`. El archivo debe compilar solo, de principio a fin.
+
+**Cómo lo entregas:** pegas en la actividad «Proyecto final» de la plataforma del curso el enlace a tu repositorio y el **enlace al commit final** (paso 4 de la sección 6).
+
+**Presentación:** en la clase de defensa tendrás cinco minutos. Puedes presentar el HTML directamente o convertir tu archivo en diapositivas cambiando la salida a `output: ioslides_presentation` (cada `##` es una diapositiva).
+
+**Qué se valora:** la rúbrica de la sección 5.4. Que el código se ejecute es necesario, pero no suficiente: se evalúa que cada decisión esté justificada y comprobada, y que puedas explicarla.
+:::
+
+## 5.1 Elige tu variante
+
+Tu proyecto no puede ser una copia del ejemplo resuelto. Elige **una** variante (o propón otra con la misma exigencia):
+
+| Variante | Qué cambia | Dónde suele estar la dificultad |
+|----------|------------|---------------------------------|
+| A. Una posición | Un modelo solo para una posición (por ejemplo, RB o WR) | Muestra más pequeña: pocos jugadores de prueba |
+| B. Otros predictores | `speed_score`, `bench_press` o `shuttle`, o medidas de brazos y manos | Más faltantes: documenta qué jugadores pierdes |
+| C. Éxito binario | `pro_bowl` como resultado, con logística o probit | Umbral y métricas; la gráfica de la sección 3 |
+| D. Elastic Net | Más predictores y Elastic Net como modelo alternativo | Explicar la selección y su estabilidad |
+| E. Otra medida de éxito | `years_as_primary_starter` como resultado | Justificar la medida y su comparabilidad |
+
+En cualquier variante, el proyecto debe tener un modelo de referencia, un modelo alternativo, evaluación en los drafts 2011–2014 y una gráfica final adecuada al tipo de resultado (sección 2 para resultados continuos; sección 3 para resultados binarios).
+
+## 5.2 Una decisión que debes poner a prueba
+
+Todo proyecto incluye una sección `# Una decisión que puse a prueba`. El director general te escribe:
+
+> "Evaluar con los drafts 2011–2014 es mirar el pasado. Evalúa también con los de 2015–2018, que se parecen más a los próximos. Hice la prueba con tu modelo: el error baja de 17.5 a 15.6. ¡El indicador funciona mejor con los jugadores recientes! Pon esa cifra en la presentación."
+
+**1. Anticipa.** ¿Por qué podría bajar el error con jugadores más recientes? Escribe al menos dos explicaciones posibles.
+
+**2. Implementa la propuesta tal como está** (con tu modelo principal en lugar de `modelo_pre`, si es distinto):
+
+```r
+recientes <- nfl |>
+  rename(forty = X40_yard) |>
+  mutate(drafted = as.logical(drafted)) |>
+  filter(drafted, year >= 2015, year <= 2018, simple_pos != "ST",
+         !(tag %in% tags_repetidos)) |>
+  mutate(nunca_jugo = is.na(career_av),
+         career_av = ifelse(nunca_jugo, 0, career_av)) |>
+  filter(!is.na(forty), !is.na(vert_leap), !is.na(broad_jump))
+
+pred_recientes <- predict(modelo_pre, newdata = recientes)
+mae(recientes$career_av, pred_recientes)
+```
+
+**3. Comprueba.** Compara los drafts 2011–2014 con los de 2015–2018: media, desviación estándar y máximo de `career_av`, y proporción de jugadores que seguían en activo en 2024 (`year_max == 2024`, el último año en que jugaron). `prueba` no tiene la columna `year_max` porque la receta no la selecciona: para 2011–2014, construye un objeto igual a `recientes` cambiando los años. Calcula también el MAE del **modelo de referencia** en los dos periodos.
+
+**4. Evalúa la decisión.** En cuatro o cinco frases: ¿el error más bajo significa que el indicador funciona mejor con los jugadores recientes? ¿Qué consecuencias tendría poner esa cifra en la presentación? ¿Cómo presentarías el error de tu indicador?
+
+**5. Seguimiento.**
+
+a) Busca en `recientes` a los tres jugadores con mayor `career_av`. ¿Qué tienen en común sus valores de `year_max`? ¿Qué pasará con sus cifras?
+
+b) ¿En qué año, aproximadamente, tendría sentido evaluar el indicador con los drafts 2015–2018? Justifica con lo que viste en la sesión 2.
+
+## 5.3 Plantilla
+
+Crea `proyecto_final.Rmd` (*File > New File > R Markdown...*) y reemplaza su contenido por esta estructura. Las secciones 1 a 10 corresponden a los diez elementos de la tabla del principio.
+
+````{verbatim, lang="markdown"}
+---
+title: "¿Qué características permiten pronosticar el éxito en la NFL?"
+author: "Tu nombre"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+# Resumen
+Tres o cuatro frases: pregunta, modelo principal, qué tan bien pronostica y para qué sirve.
+
+# 1. Pregunta de pronóstico
+Momento del pronóstico, población y resultado.
+
+# 2. Variable de éxito
+Cuál, por qué, y qué alternativa descartaste.
+
+# 3. Datos y limpieza
+La receta completa y la tabla de filas en cada paso, con la razón de cada decisión.
+
+# 4. Exploración
+Descriptivos, correlaciones (dentro de grupos si corresponde) y una o dos gráficas que respondan preguntas.
+
+# 5. Predictores
+Cuáles, por qué, y cuáles excluiste (faltantes, fuga de información).
+
+# 6. Modelos
+Referencia y alternativa(s), estimadas solo con el entrenamiento.
+
+# 7. Evaluación fuera de muestra
+Métricas en la prueba, con la misma muestra para todos los modelos.
+
+# 8. Gráfica final
+Observados frente a pronosticados con línea de 45 grados, o probabilidades por resultado.
+
+# 9. Variables informativas
+Qué aportan y con qué evidencia. Sin lenguaje causal.
+
+# 10. Limitaciones y uso
+Para quién vale, para qué sirve y para qué no.
+
+# Una decisión que puse a prueba
+Los cinco pasos de la sección 5.2.
+
+# Bitácora
+Qué hice, qué comprobé, qué decidí y descarté, y cómo usé la IA.
+````
+
+## 5.4 Rúbrica
+
+| Criterio | Puntos | Lo que distingue un trabajo excelente |
+|----------|--------|---------------------------------------|
+| Pregunta y variable de éxito | 10 | Momento, población y resultado explícitos; la medida de éxito se justifica frente a una alternativa |
+| Datos y limpieza | 10 | Cada decisión tiene razón escrita y su efecto en el número de filas |
+| Exploración | 15 | Las gráficas responden preguntas; las correlaciones consideran la posición; hay comprobaciones independientes |
+| Predictores | 10 | Ninguno filtra información del resultado; los excluidos están justificados |
+| Modelos | 15 | Referencia y alternativa estimadas solo con entrenamiento; se interpreta al menos un coeficiente o probabilidad |
+| Evaluación | 10 | Fuera de muestra, mismas filas, métricas adecuadas y comparadas con la referencia |
+| Gráfica final e interpretación | 10 | Gráfica adecuada al tipo de resultado, bien etiquetada, y lectura correcta de los errores |
+| Decisión puesta a prueba | 10 | Los cinco pasos, con evidencia cuantitativa y una conclusión defendible |
+| Limitaciones y lenguaje | 5 | Limitaciones concretas; ninguna afirmación causal ni de certeza |
+| Reproducibilidad y trazabilidad | 5 | Compila solo; repositorio ordenado; bitácora y mensajes de cambio claros |
+
+## 5.5 La defensa
+
+En la defensa (5 minutos, con tu archivo abierto) te harán dos o tres de estas preguntas. No se trata de recitar: se trata de mostrar que el análisis es tuyo, aunque parte del código no lo hayas escrito tú.
+
+1. Señala una línea de tu código, de preferencia una que haya escrito la IA, y explica qué hace sin leer ningún comentario.
+2. ¿Qué pasaría con tu evaluación si incluyeras `g` como predictor? ¿Por qué?
+3. ¿Por qué dividiste por año y no al azar?
+4. En tu gráfica final, ¿qué significa un punto muy por encima de la línea? Da un ejemplo de tu muestra.
+5. Si mañana cambias el umbral (o la métrica), ¿qué cambiaría en tus conclusiones?
+
+---
+
+# 6. Entrega en GitHub
+
+## Paso 1. Revisa la estructura final
+
+```
+curso-programacion-r/
+├── README.md
+├── sesion-1/   sesion1_trabajo.Rmd, notas.md
+├── sesion-2/   sesion2_tarea.Rmd, notas.md
+├── sesion-3/   sesion3_tarea.Rmd, graficas/, notas.md
+├── sesion-4/   sesion4_tarea.Rmd, notas.md
+└── sesion-5/   proyecto_final.Rmd, proyecto_final.html, graficas/, notas.md
+```
+
+## Paso 2. Comprueba la reproducibilidad
+
+Cierra RStudio, vuelve a abrirlo, abre `proyecto_final.Rmd` y pulsa **Knit**. Si compila en una sesión nueva, no depende de objetos que creaste a mano.
+
+## Paso 3. Sube el proyecto
+
+En `sesion-5/`, **Add file > Upload files**: `proyecto_final.Rmd`, su HTML y la carpeta `graficas`. Mensaje: *Versión final del proyecto*.
+
+## Paso 4. El enlace al commit final
+
+Abre el historial (*Commits*) y haz clic en el cambio *Versión final del proyecto*. La dirección de esa página es el **enlace al commit final**: aunque después corrijas algo, seguirá señalando exactamente la versión que entregaste. Si cambias algo después, haz un nuevo cambio con el mensaje *Versión final corregida: [qué cambió]* y entrega ese enlace.
+
+## Paso 5. Actualiza el README y la nota
+
+Actualiza `README.md` con un párrafo de resultados: modelo principal, error en la prueba comparado con la referencia, y la limitación principal. En `sesion-5/notas.md`, las cinco partes de siempre.
+
+## Paso 6. Entrega
+
+Pega en la actividad «Proyecto final» de la plataforma del curso el enlace a tu repositorio y el enlace al commit final. Antes, ábrelos en una ventana privada del navegador para confirmar que el repositorio sigue siendo público y que los enlaces funcionan.
+
+## Lista de comprobación final
+
+- [ ] `proyecto_final.Rmd` compila en una sesión nueva de RStudio.
+- [ ] Tiene las diez secciones, la decisión puesta a prueba y la bitácora.
+- [ ] Ningún predictor se conoce solo después del resultado.
+- [ ] Los modelos se estimaron con el entrenamiento y se evaluaron en la prueba.
+- [ ] La gráfica final es la adecuada para mi tipo de resultado.
+- [ ] No hay lenguaje causal ni promesas de certeza.
+- [ ] El README resume los resultados.
+- [ ] Pegué en la actividad «Proyecto final» el enlace al repositorio y el enlace al commit final.
