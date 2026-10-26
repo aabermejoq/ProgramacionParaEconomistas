@@ -17,6 +17,12 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##")
 
 # Ancho de impresión mayor para que las tablas no se corten en el HTML
 options(width = 100)
+
+# Compilar siempre desde la carpeta de este archivo, aunque RStudio tenga configurado
+# otro directorio en Knit > Knit Directory. Así funcionan las rutas relativas como "datos/NFL.csv".
+if (!is.null(knitr::current_input())) {
+  knitr::opts_knit$set(root.dir = dirname(knitr::current_input(dir = TRUE)))
+}
 ```
 
 ```{css, echo=FALSE}
@@ -243,15 +249,25 @@ ruta_datos <- "datos/NFL.csv"
 file.exists(ruta_datos)
 ```
 
-Si te sale `FALSE`, el archivo no está donde R lo busca. Revisa que la carpeta se llame `datos` (sin acento ni mayúscula), que `NFL.csv` esté dentro y que este `.Rmd` esté en la carpeta de arriba. Si ejecutas código desde la consola, puede que la consola esté "parada" en otra carpeta: usa *Session > Set Working Directory > To Source File Location*.
+Si te sale `FALSE`, el archivo no está donde R lo busca. Las causas más frecuentes:
+
+- **Abriste el `.Rmd` desde dentro del ZIP**, sin descomprimirlo. El programa de archivos extrae solo ese documento a una carpeta temporal y la carpeta `datos` no viaja con él. Descomprime el ZIP completo (*Extraer todo*) y abre el `.Rmd` desde la carpeta descomprimida.
+- **La carpeta no se llama `datos`** (sin acento ni mayúscula), `NFL.csv` no está dentro, o este `.Rmd` no está en la carpeta de arriba.
+- **Ejecutas código desde la consola** y la consola está "parada" en otra carpeta: usa *Session > Set Working Directory > To Source File Location*.
+
+Si al hacer Knit aparece el error `no se puede abrir la conexión` (en inglés, `cannot open the connection`), es este mismo problema.
 
 ## Importar
 
 ```{r}
+if (!file.exists(ruta_datos)) {
+  stop("R no encuentra ", ruta_datos, " (está trabajando en ", getwd(), "). ",
+       "Descomprime el ZIP completo y deja la carpeta 'datos', con NFL.csv dentro, junto a este .Rmd.")
+}
 jugadores <- read.csv(ruta_datos)
 ```
 
-`read.csv()` lee el archivo y nosotros guardamos la tabla en un objeto llamado `jugadores`. No se ve nada porque solo asignamos. Una comprobación mínima: el archivo con el que se preparó este curso tiene 3,477 filas y 18 columnas. Si el tuyo no, es otra versión y algunas cifras del texto no coincidirán. No te preocupes por la sintaxis del `if`; se lee así: "si el número de filas es distinto (`!=`) de 3,477 o (`||`) el de columnas es distinto de 18, avisa".
+`read.csv()` lee el archivo y nosotros guardamos la tabla en un objeto llamado `jugadores`. No se ve nada porque solo asignamos. Las tres primeras líneas son una comprobación: si R no encuentra el archivo, se detiene con un mensaje que dice en qué carpeta lo buscó, en lugar del error poco claro `no se puede abrir la conexión`. Una comprobación mínima: el archivo con el que se preparó este curso tiene 3,477 filas y 18 columnas. Si el tuyo no, es otra versión y algunas cifras del texto no coincidirán. No te preocupes por la sintaxis del `if`; se lee así: "si el número de filas es distinto (`!=`) de 3,477 o (`||`) el de columnas es distinto de 18, avisa".
 
 ```{r}
 if (nrow(jugadores) != 3477 || ncol(jugadores) != 18) {
@@ -698,7 +714,7 @@ Confirma el cambio con un mensaje como *Nota de entrega de la sesión 1*.
 | El repositorio se llama distinto (`curso-programación-r`, `Curso-programacion-R`...) | Se escribió con acentos o mayúsculas | En el repositorio, **Settings > General > Repository name**, corrige el nombre y pulsa *Rename* |
 | Subí el archivo a la carpeta equivocada | Se pulsó *Upload files* desde la portada y no desde la carpeta | Abre el archivo, pulsa el lápiz y, en el campo del nombre, escribe la carpeta delante (`sesion-1/sesion1_trabajo.Rmd`); al confirmar, el archivo se mueve |
 | Subí el `.html` pero no el `.Rmd` | Se eligió el archivo equivocado | Sube también el `.Rmd`: es el que permite reproducir el trabajo |
-| Al hacer Knit dentro de `sesion-1` sale un error con `NFL.csv` | La ruta sigue siendo `"datos/NFL.csv"` | Cámbiala a `"../datos/NFL.csv"` y revisa que `datos` esté una carpeta más arriba |
+| Al hacer Knit dentro de `sesion-1` sale un error con `NFL.csv` (o `no se puede abrir la conexión`) | La ruta sigue siendo `"datos/NFL.csv"`, o falta la carpeta `datos` | Cámbiala a `"../datos/NFL.csv"` y revisa que `datos` esté una carpeta más arriba |
 | El profesor no puede ver mi repositorio | Es privado y no lo invitaste | Paso 10.2 |
 | El mensaje del cambio quedó como *Add files via upload* | Es el mensaje que GitHub propone si no escribes otro | No es grave. Para los siguientes cambios escribe un mensaje propio; si quieres, explica el anterior en `notas.md` |
 | GitHub rechaza la subida diciendo que contiene un secreto | Hay una clave o token dentro del archivo | Elimínalo del archivo antes de volver a subirlo |

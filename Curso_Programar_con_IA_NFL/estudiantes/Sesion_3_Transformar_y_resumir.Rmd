@@ -17,6 +17,12 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##")
 
 # Ancho de impresión mayor para que las tablas no se corten en el HTML
 options(width = 100)
+
+# Compilar siempre desde la carpeta de este archivo, aunque RStudio tenga configurado
+# otro directorio en Knit > Knit Directory. Así funcionan las rutas relativas como "datos/NFL.csv".
+if (!is.null(knitr::current_input())) {
+  knitr::opts_knit$set(root.dir = dirname(knitr::current_input(dir = TRUE)))
+}
 ```
 
 ```{css, echo=FALSE}
@@ -42,7 +48,8 @@ library(dplyr)
 # Busca NFL.csv en datos/ (carpeta del curso) o en ../datos/ (dentro de sesion-3/ en tu repositorio)
 ruta_datos <- if (file.exists("datos/NFL.csv")) "datos/NFL.csv" else "../datos/NFL.csv"
 if (!file.exists(ruta_datos)) {
-  stop("No encuentro NFL.csv ni en datos/ ni en ../datos/. Revisa dónde está la carpeta 'datos'.")
+  stop("No encuentro NFL.csv ni en datos/ ni en ../datos/ (R está trabajando en ", getwd(), "). ",
+       "Descomprime el ZIP completo y deja la carpeta 'datos' junto a este .Rmd o una carpeta más arriba.")
 }
 jugadores <- read.csv(ruta_datos)
 
