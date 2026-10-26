@@ -10,25 +10,16 @@ output:
     toc_depth: 2
     theme: flatly
     highlight: tango
-params:
-  soluciones: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##")
-
-# Las soluciones y las notas para el profesor se muestran plegadas.
-# Para generar una versión sin ellas:
-# rmarkdown::render("Sesion_2_Explorar_y_filtrar.Rmd", params = list(soluciones = FALSE))
-mostrar_sol <- if (exists("params")) isTRUE(params$soluciones) else TRUE
 
 # Ancho de impresión mayor para que las tablas no se corten en el HTML
 options(width = 100)
 ```
 
 ```{css, echo=FALSE}
-details.solucion { border-left: 4px solid #18bc9c; background: #f4faf8; padding: 0.5em 1em; margin: 1em 0; }
-details.solucion summary { cursor: pointer; font-weight: bold; }
 .tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
 .ia { border-left: 4px solid #eb6834; background: #fdf5f1; padding: 0.6em 1em; margin: 1em 0; }
 .aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
@@ -105,23 +96,6 @@ a) Reescribe la afirmación como una pregunta que se pueda responder con los dat
 b) Haz una lista de las decisiones que vas a tener que tomar para responderla. Piensa en: quiénes cuentan como "receptores", qué significa exactamente "bajar de 4.4", qué hacer con los jugadores que no tienen tiempo registrado, y con quién comparar.
 
 c) Anticipa: ¿qué porcentaje de esos receptores rápidos crees que fue elegido? ¿Y de todos los receptores?
-
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver comentario</summary>
-
-a) Una versión posible: "Entre los receptores que corrieron las 40 yardas en el Combine 2009-2019, ¿qué proporción de los que bajaron de 4.4 segundos fue elegida en el draft, y cómo se compara con la de los que no bajaron de esa marca?".
-
-b) Al menos cuatro decisiones:
-
-- **Quiénes son "receptores".** ¿Solo los *wide receivers* (`WR`)? ¿También los *tight ends* (`TE`), que también reciben pases? No es una pregunta de programación: hay que preguntarle al coordinador qué quiso decir.
-- **El umbral.** ¿"Bajar de 4.4" es `< 4.4` o `<= 4.4`? Los tiempos vienen con dos decimales, así que quien corrió exactamente 4.40 queda dentro o fuera según el símbolo.
-- **Los que no tienen tiempo.** No sabemos si son rápidos o lentos. ¿Los excluimos? ¿Los reportamos aparte?
-- **La comparación.** "Casi siempre" no dice mucho sin un punto de referencia. Si el 85% de los receptores rápidos fue elegido, ¿es mucho? Depende de qué pasó con los demás.
-
-c) Cualquier cifra sirve, siempre que la escribas antes de calcular. La vas a necesitar para saber si el resultado te sorprende.
-</details>
-```
 
 ---
 
@@ -298,44 +272,6 @@ nrow(todos_receptores)
 
 ```
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-auditoria, eval = mostrar_sol, echo = mostrar_sol}
-receptores_no_rapidos <- filter(jugadores, Position == "WR", Sprint_40yd >= 4.4)
-receptores_sin_tiempo <- filter(jugadores, Position == "WR", is.na(Sprint_40yd))
-
-# ¿Cuadran las cuentas?
-nrow(todos_receptores)
-nrow(receptores_rapidos) + nrow(receptores_no_rapidos) + nrow(receptores_sin_tiempo)
-
-# Proporción de elegidos en cada grupo
-mean(todos_receptores$Drafted == "Yes")
-mean(receptores_rapidos$Drafted == "Yes")
-mean(receptores_no_rapidos$Drafted == "Yes")
-mean(receptores_sin_tiempo$Drafted == "Yes")
-
-# e) Con <= en lugar de <
-receptores_rapidos_v2 <- filter(jugadores, Position == "WR", Sprint_40yd <= 4.4)
-nrow(receptores_rapidos_v2)
-mean(receptores_rapidos_v2$Drafted == "Yes")
-```
-
-```{asis, echo = mostrar_sol}
-a) Los 60 jugadores registrados como `WR` que corrieron en menos de 4.40 segundos.
-
-b) Excluye a todos los que no son `WR` (incluidos los *tight ends* y los corredores, que también reciben pases); a los 420 receptores que corrieron en 4.40 o más; y a los 26 receptores sin tiempo registrado. 60 + 420 + 26 = 506: ahora sí cuadran.
-
-c) `filter()` se queda solo con las filas donde la condición es `TRUE`. Para los 26 receptores sin tiempo la condición es `NA`, así que desaparecen sin aviso. De ellos, 12 fueron elegidos (46%). No sabemos si eran rápidos o lentos.
-
-d) El 85% es correcto para la definición que eligió el compañero, pero solo, sin comparación, no dice mucho. Entre los receptores que corrieron 4.40 o más, el 56% fue elegido; entre todos los receptores, el 59%. La diferencia entre 85% y 56% sí apoya la idea del coordinador de que los rápidos son elegidos con más frecuencia. "Casi siempre" es una forma de decirlo; "nueve de los 60 receptores rápidos no fueron elegidos" es otra, con los mismos datos. Además, esto describe una asociación: no dice que correr rápido sea la *razón* por la que los eligieron (volveremos a esto en la sesión 4).
-
-e) Con `<=` entran 72 receptores en lugar de 60: hay 12 que corrieron exactamente 4.40. La proporción de elegidos pasa a 86%. Aquí la conclusión no cambia mucho, pero el número de jugadores sí: si el coordinador pregunta "¿cuántos son?", la respuesta depende de un símbolo.
-</details>
-```
-
 ## La propuesta de un asistente de IA
 
 Le planteamos la misma pregunta a un asistente de IA con esta petición:
@@ -382,38 +318,6 @@ Y una pregunta más: ¿la explicación de la IA describe correctamente su propio
 table(receptores_elite$Position)
 ```
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-comparacion, eval = mostrar_sol, echo = mostrar_sol}
-# Solo cambia la definición de "receptor" (se mantiene el < del compañero)
-solo_posicion <- filter(jugadores, Position_Type == "backs_receivers", Sprint_40yd < 4.4)
-nrow(solo_posicion)
-mean(solo_posicion$Drafted == "Yes")
-table(solo_posicion$Position)
-
-# Solo cambia el umbral: ya lo calculamos (receptores_rapidos_v2), 72 jugadores
-```
-
-```{asis, echo = mostrar_sol}
-| Decisión | Compañero | Asistente de IA | ¿Cambia el resultado? |
-|----------|-----------|-----------------|------------------------|
-| Quiénes son "receptores" | `Position == "WR"` | `Position_Type == "backs_receivers"`: incluye `RB`, `TE` y `QB` | Sí: con `<` pasan de 60 a 84 jugadores, 23 de ellos corredores |
-| Umbral | `< 4.4` | `<= 4.4` | Sí: 12 receptores corrieron exactamente 4.40 |
-| Sin tiempo | Se excluyen sin decirlo | Se excluyen de forma explícita | No cambia el número: `filter()` ya los quitaba. Pero la versión de la IA hace visible la decisión |
-| Columnas | Todas | Cinco | No afecta al resultado |
-| Comparación | Ninguna | Ninguna | Ninguna de las dos da contexto |
-
-La IA interpretó "receptores" a partir del nombre de la columna `backs_receivers`, que agrupa a corredores, receptores, *tight ends*, *quarterbacks* y *fullbacks*. En su selección final hay 72 `WR`, 32 `RB`, un `TE` y un `QB`. Su explicación, además, dice "en menos de 4.4" cuando el código usa `<=`, y llama "receptores" a un grupo donde casi un tercio son corredores. Ninguna de estas cosas produce un error al ejecutar el código. Solo se ven leyendo.
-
-Lo interesante es que las dos versiones dan casi el mismo porcentaje. Si solo hubiéramos comparado resultados, habríamos concluido que son equivalentes. Responden preguntas distintas que, en este caso, dan cifras parecidas. Con otra pregunta, u otros datos, podrían no coincidir.
-
-Y una decisión que ninguna de las dos versiones tomó: comparar con los receptores más lentos. Un asistente de IA hace lo que le pides; si la petición no menciona un grupo de comparación, normalmente no lo agrega por su cuenta.
-</details>
-```
-
 ::: {.ia}
 **Si tienes acceso a una IA.** Pega el código del compañero y pregunta:
 
@@ -444,29 +348,6 @@ Le salen 86 receptores rápidos, no 60. El código se ejecutó sin errores. ¿Qu
 
 ```
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-corchetes, eval = mostrar_sol, echo = mostrar_sol}
-tail(rapidos_corchetes, 3)
-sum(is.na(rapidos_corchetes$Player))   # filas que no tienen ni siquiera nombre
-
-# Una forma de corregirlo: pedir explícitamente que el tiempo no falte
-rapidos_corchetes_ok <- jugadores[jugadores$Position == "WR" &
-                                  !is.na(jugadores$Sprint_40yd) &
-                                  jugadores$Sprint_40yd < 4.4, ]
-nrow(rapidos_corchetes_ok)
-```
-
-```{asis, echo = mostrar_sol}
-Con corchetes, cuando la condición da `NA` (los 26 receptores sin tiempo), R no descarta la fila: devuelve una fila llena de `NA`, sin nombre, sin posición, sin nada. Por eso `nrow()` dice 86. Si después calculas `mean(rapidos_corchetes$Drafted == "Yes")` obtienes `NA`, y si alguien "arregla" eso con `na.rm = TRUE` volverá a 85%... sin saber que la tabla tenía 26 filas fantasma.
-
-Ninguna de las dos formas está "mal". `filter()` descarta los `NA` en silencio; los corchetes los conservan como filas vacías. Lo que importa es saber qué hace cada una y comprobar el número de filas.
-</details>
-```
-
 ## Ejercicio 3. Cambiar una decisión
 
 El coordinador defensivo oye la conversación y pregunta lo mismo para sus *cornerbacks* (`CB`), pero con otro umbral: 4.45 segundos.
@@ -482,32 +363,6 @@ c) Escribe en una frase qué cambiaste respecto al análisis de receptores, por 
 
 ```
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-cornerbacks, eval = mostrar_sol, echo = mostrar_sol}
-cb_todos      <- filter(jugadores, Position == "CB")
-cb_rapidos    <- filter(jugadores, Position == "CB", Sprint_40yd < 4.45)
-cb_no_rapidos <- filter(jugadores, Position == "CB", Sprint_40yd >= 4.45)
-cb_sin_tiempo <- filter(jugadores, Position == "CB", is.na(Sprint_40yd))
-
-nrow(cb_todos)
-nrow(cb_rapidos) + nrow(cb_no_rapidos) + nrow(cb_sin_tiempo)
-
-mean(cb_rapidos$Drafted == "Yes")
-mean(cb_no_rapidos$Drafted == "Yes")
-mean(cb_sin_tiempo$Drafted == "Yes")
-```
-
-```{asis, echo = mostrar_sol}
-Hay 393 *cornerbacks*: 117 bajan de 4.45, 265 no, y 11 no tienen tiempo. Fue elegido el 86% de los rápidos, frente al 65% de los demás. Con solo 11 jugadores sin tiempo, el 36% de ese grupo (4 jugadores) es una cifra muy frágil: un jugador más o menos la mueve casi 10 puntos.
-
-Una frase posible: "Cambié la posición (WR a CB) y el umbral (4.40 a 4.45) a petición del coordinador defensivo: 86% de elegidos entre los CB rápidos frente a 65% del resto; la brecha es menor que en receptores (85% frente a 56%)". Un buen mensaje de cambio dice qué cambió, por qué y qué efecto tuvo; "cambios" o "versión nueva" no dicen nada.
-</details>
-```
-
 ---
 
 # 6. Cómo decirlo en la reunión
@@ -515,16 +370,6 @@ Una frase posible: "Cambié la posición (WR a CB) y el umbral (4.40 a 4.45) a p
 Escribe la frase que llevarías a la reunión del jueves. Debe incluir: a quiénes se refiere la cifra, la comparación y quiénes quedaron fuera.
 
 *Mi frase:*
-
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver un ejemplo</summary>
-
-"De los 480 receptores abiertos (WR) con tiempo registrado en el Combine entre 2009 y 2019, 60 corrieron las 40 yardas en menos de 4.40 segundos. De ellos, 51 (85%) fueron elegidos en el draft, frente al 56% de los que corrieron 4.40 o más. Otros 26 receptores no tienen tiempo registrado y no están en el cálculo. Si se incluyen los que corrieron exactamente 4.40, el grupo sube a 72 jugadores y la proporción a 86%."
-
-Es más larga que "85% de los receptores rápidos fueron elegidos", pero cada parte responde una pregunta que alguien en la reunión podría hacer.
-</details>
-```
 
 ## Para cerrar
 
@@ -536,33 +381,76 @@ Quien presenta la cifra responde por la selección que hay detrás, la haya escr
 
 ---
 
-# Tarea 2 (después de clase): una selección de jugadores que puedas explicar
+# Tarea 2 (después de clase): evaluar una selección y hacer la tuya
 
 ::: {.tarea}
-**Tiempo estimado:** 30–45 minutos.
+**Tiempo estimado:** 30–45 minutos (unos 20 para la parte A y 15 para la parte B, más la subida a GitHub).
 
-**Qué haces:** formulas una pregunta de scouting, seleccionas las variables que necesitas y aplicas **al menos dos filtros**. Después compruebas qué jugadores quedaron dentro y fuera.
+**Qué haces:** en la parte A pones a prueba una selección de jugadores que propone el coordinador defensivo; en la parte B formulas tu propia pregunta y aplicas al menos dos filtros.
 
 **Qué entregas:** el archivo `sesion2_tarea.Rmd` (y, si quieres, su HTML) en la carpeta `sesion-2/` de tu repositorio `curso-programacion-r`, con **al menos dos versiones** en el historial.
 
-**IA:** puedes usarla o no. Si la usas, anota en la parte 4 qué le pediste, qué te propuso y qué comprobaste antes de aceptarlo.
+**Qué se valora:** que compruebes con conteos lo que hace cada filtro, que expliques a quiénes incluye y excluye cada decisión y que justifiques tus elecciones. Que el código se ejecute es necesario, pero no suficiente.
+
+**IA:** puedes usarla o no. Si la usas, anota en la parte 4 de tu archivo qué le pediste, qué te propuso y qué comprobaste antes de aceptarlo.
 :::
 
-## Paso 1. Elige una pregunta
+## Parte A. Los linebackers "atléticos"
 
-Debe poder responderse con las columnas de `NFL.csv` y con lo que vimos hoy. Algunos ejemplos para inspirarte (elige uno o formula el tuyo, pero no copies el análisis de clase):
+El coordinador defensivo te escribe:
+
+> "Quiero saber si los linebackers atléticos terminan elegidos con más frecuencia. Un linebacker es atlético si corrió las 40 yardas en menos de 4.7 segundos **y** la prueba de tres conos en menos de 7.0 segundos. Compáralos con el resto de los linebackers."
+
+Y te pasa este código:
+
+```r
+linebackers <- filter(jugadores, Position_Type == "line_backer")
+atleticos   <- filter(linebackers, Sprint_40yd < 4.7, Agility_3cone < 7.0)
+
+nrow(atleticos)
+mean(atleticos$Drafted == "Yes")
+
+# "El resto": todos los demás linebackers
+elegidos_resto  <- sum(linebackers$Drafted == "Yes") - sum(atleticos$Drafted == "Yes")
+jugadores_resto <- nrow(linebackers) - nrow(atleticos)
+elegidos_resto / jugadores_resto
+```
+
+Recuerda que en la prueba de tres conos, como en las 40 yardas, un tiempo menor es mejor.
+
+**1. Ejecuta la propuesta** y anota los dos porcentajes que produce y cuántos jugadores hay en cada grupo.
+
+**2. Comprueba qué hace cada decisión.** Responde con código:
+
+- ¿Cuántos linebackers hay en total? ¿Cuántos no tienen tiempo en 40 yardas y cuántos no tienen la prueba de tres conos?
+- ¿Cuántos linebackers bajaron de 4.7 en las 40 yardas? ¿Cuántos de ellos no tienen la prueba de tres conos? ¿En qué grupo los cuenta el código del coordinador?
+- ¿Cuadran las cuentas entre los grupos que forma el código y lo que sabes de los datos?
+
+**3. Evalúa las decisiones.** Para cada una, di si te parece adecuada para la pregunta y por qué: el grupo de posiciones (`line_backer`), el umbral de 4.7, el umbral de 7.0 (mira `summary(linebackers$Agility_3cone)`), unir las dos pruebas con "y", y la forma de definir "el resto". ¿Cuál de estas decisiones cambia más la conclusión?
+
+**4. Propón una alternativa y calcúlala.** Puede ser otra forma de formar los grupos o de definir con quién se compara. Muestra cuántos jugadores hay en cada grupo y comprueba que las cuentas cuadran.
+
+**5. Seguimiento.** Cambia el umbral de tres conos de 7.0 a 7.2. **Antes de ejecutar**, predice: ¿cambiará el número de linebackers que bajaron de 4.7 en las 40 yardas pero no tienen la prueba de tres conos? Explica por qué y luego compruébalo.
+
+**6. Conclusión.** Escribe la frase que le enviarías al coordinador: a quiénes se refiere, qué encontraste y quiénes quedaron fuera.
+
+## Parte B. Tu propia selección
+
+Formula una pregunta de scouting distinta, que se pueda responder con las columnas de `NFL.csv` y con lo que vimos en clase, y aplica **al menos dos filtros**. Algunos ejemplos para inspirarte (no copies el análisis de clase ni el de la parte A):
 
 - ¿Qué proporción de los *tight ends* (`TE`) que pesan más de 113 kg (unas 250 libras) fue elegida?
-- Entre los *linebackers* (`ILB`, `OLB`) con tiempo registrado, ¿cuántos bajaron de 4.6 segundos y qué proporción de ellos fue elegida?
 - ¿Cuántos defensivos de cobertura (`CB`, `FS`, `SS`, `S`) saltaron más de 100 cm en vertical, y de qué años son?
+- Entre los corredores (`RB`) con tiempo registrado, ¿cuántos bajaron de 4.5 segundos y qué proporción fue elegida?
 
-## Paso 2. Crea tu archivo con esta estructura
+Para tu pregunta: comenta en el código por qué está cada filtro, cuenta cuántos jugadores quedan, cuántos excluiste y cuántos no tenían el dato, y prueba una alternativa razonable para uno de tus filtros.
+
+## Crea tu archivo con esta estructura
 
 En RStudio: *File > New File > R Markdown...*, escribe el título y pulsa *OK*. RStudio crea un documento de ejemplo: borra todo su contenido y pega esta plantilla. Guárdalo como `sesion2_tarea.Rmd` dentro de tu carpeta `curso-programacion-r/sesion-2/`.
 
 ````{verbatim, lang = "markdown"}
 ---
-title: "Tarea 2: una selección de jugadores que puedo explicar"
+title: "Tarea 2: evaluar una selección y hacer la mía"
 author: "Tu nombre"
 output: html_document
 ---
@@ -573,14 +461,57 @@ ruta_datos <- if (file.exists("datos/NFL.csv")) "datos/NFL.csv" else "../datos/N
 jugadores <- read.csv(ruta_datos)
 ```
 
+# Parte A. Los linebackers "atléticos"
+
 ## 1. Lo que quería conseguir
 
-Mi pregunta de scouting, en una o dos frases, y qué esperaba encontrar:
+La pregunta del coordinador, con mis palabras, y lo que esperaba encontrar:
 
 ## 2. Código
 
-```{r seleccion}
-# Columnas que uso y por qué: ...
+```{r propuesta-coordinador}
+linebackers <- filter(jugadores, Position_Type == "line_backer")
+atleticos   <- filter(linebackers, Sprint_40yd < 4.7, Agility_3cone < 7.0)
+
+nrow(atleticos)
+mean(atleticos$Drafted == "Yes")
+
+elegidos_resto  <- sum(linebackers$Drafted == "Yes") - sum(atleticos$Drafted == "Yes")
+jugadores_resto <- nrow(linebackers) - nrow(atleticos)
+elegidos_resto / jugadores_resto
+```
+
+## 3. Comprobaciones
+
+```{r comprobaciones-a}
+# Totales, faltantes de cada prueba, y en qué grupo queda cada jugador
+```
+
+Lo que encontré:
+
+## 4. Decisiones que conservé o descarté
+
+Mi evaluación de cada decisión del coordinador y mi alternativa:
+
+```{r alternativa-a}
+# Mi alternativa, con cuentas que cuadren
+```
+
+Seguimiento (umbral de 7.2): mi predicción, por qué, y lo que pasó:
+
+## 5. Conclusión que puedo defender
+
+La frase para el coordinador:
+
+# Parte B. Mi propia selección
+
+## 1. Lo que quería conseguir
+
+Mi pregunta de scouting y qué esperaba encontrar:
+
+## 2. Código
+
+```{r seleccion-b}
 mi_seleccion <- jugadores %>%
   select(Player, Year, Position, Drafted) %>%   # cambia por tus columnas
   filter(Position == "TE")                       # cambia por tus filtros (al menos dos)
@@ -590,12 +521,10 @@ nrow(mi_seleccion)
 
 ## 3. Comprobaciones
 
-```{r comprobaciones}
+```{r comprobaciones-b}
 # ¿Cuántos jugadores había antes de filtrar y cuántos quedan?
 # ¿Cuántos NA hay en las columnas que usas para filtrar?
 ```
-
-Qué jugadores incluye mi selección y cuáles excluye (¿cuadran las cuentas?):
 
 ## 4. Decisiones que conservé o descarté
 
@@ -607,31 +536,15 @@ Si usé IA: qué le pedí, qué propuso y qué comprobé.
 Una frase que diga a quiénes se refiere, qué encontré y quiénes quedaron fuera:
 ````
 
-## Paso 3. Completa las cinco partes
+Pulsa **Knit** con frecuencia. Si no compila, lee el mensaje de error antes de cambiar nada (abajo hay una tabla con los más frecuentes).
 
-1. **Lo que querías conseguir**: tu pregunta y lo que esperabas.
-2. **El código**: `select()` con las columnas que necesitas y `filter()` con al menos dos condiciones, cada una con un comentario que diga por qué está ahí.
-3. **Las comprobaciones**: cuántos jugadores había antes y cuántos quedan; cuántos `NA` hay en las columnas que usas para filtrar (`sum(is.na(...))`); y si las cuentas cuadran cuando separas incluidos, excluidos y sin dato.
-4. **Las decisiones**: elige uno de tus filtros, prueba una alternativa razonable (otro umbral, `<` frente a `<=`, otra definición del grupo) y explica qué cambió y por qué te quedas con tu versión.
-5. **La conclusión**: una frase como la de la sección 6 de hoy, que diga a quiénes se refiere la cifra y quiénes quedaron fuera.
-
-Pulsa **Knit**. Si no compila, lee el mensaje de error antes de cambiar nada (abajo hay una tabla con los más frecuentes).
-
-## Paso 4. Sube tu archivo a GitHub
+## Sube tu archivo y una segunda versión
 
 1. Entra a tu repositorio `curso-programacion-r` y abre la carpeta `sesion-2`.
-2. **Add file > Upload files** y arrastra `sesion2_tarea.Rmd` (y el HTML, si quieres).
-3. En el mensaje del cambio escribe algo como *Tarea 2: selección de tight ends pesados*.
-4. Deja marcada la opción de confirmar en `main` y pulsa **Commit changes**.
-
-## Paso 5. Sube una segunda versión y comprueba el historial
-
-El objetivo es practicar lo que hace útil a GitHub: que una versión nueva no borre la anterior.
-
-1. Haz una mejora real en tu archivo: por ejemplo, una comprobación adicional o una explicación más clara en la parte 4. Guarda y vuelve a hacer **Knit**.
-2. Vuelve a subir el archivo **con el mismo nombre** a la misma carpeta (`sesion-2`). GitHub reemplaza el archivo y registra el cambio.
-3. Escribe un mensaje que diga qué mejoraste, por ejemplo *Tarea 2: agrego comprobación de faltantes en Weight*.
-4. Comprueba: abre `sesion2_tarea.Rmd` en GitHub y pulsa **History**. Debes ver dos versiones. Haz clic en la más reciente: GitHub marca en verde lo que añadiste y en rojo lo que quitaste. Busca en el archivo una línea que hayas cambiado para confirmar que la versión visible es la nueva.
+2. **Add file > Upload files** y arrastra `sesion2_tarea.Rmd` (y el HTML, si quieres). En el mensaje del cambio escribe algo como *Tarea 2: parte A y primera versión de la parte B*, deja marcada la opción de confirmar en `main` y pulsa **Commit changes**.
+3. Haz una mejora real en tu archivo (por ejemplo, una comprobación adicional o una explicación más clara), guarda y vuelve a hacer **Knit**.
+4. Vuelve a subir el archivo **con el mismo nombre** a la misma carpeta. GitHub reemplaza el archivo y registra el cambio. Escribe un mensaje que diga qué mejoraste.
+5. Comprueba: abre `sesion2_tarea.Rmd` en GitHub y pulsa **History**. Debes ver dos versiones. Haz clic en la más reciente: GitHub marca en verde lo que añadiste y en rojo lo que quitaste.
 
 ## Errores habituales
 
@@ -642,15 +555,15 @@ El objetivo es practicar lo que hace útil a GitHub: que una versión nueva no b
 | `We detected a named input` | Usaste `=` en lugar de `==` dentro de `filter()` | Cambia a `==` |
 | La selección tiene 0 filas | Filtros demasiado estrictos o texto mal escrito (`"wr"` en lugar de `"WR"`) | Aplica los filtros de uno en uno y mira cuántas filas quedan después de cada uno |
 | En GitHub aparece `sesion2_tarea (1).Rmd` | Tu computadora renombró el archivo al guardarlo o descargarlo | Sube el archivo con el nombre exacto; borra el duplicado (abre el archivo, menú **...** > *Delete file*) |
-| El historial muestra una sola versión | Subiste la segunda con otro nombre o a otra carpeta | Revisa nombre y carpeta, y repite el paso 5 |
+| El historial muestra una sola versión | Subiste la segunda con otro nombre o a otra carpeta | Revisa nombre y carpeta, y repite los pasos 3 y 4 |
 
 ## Lista de comprobación
 
-- [ ] Mi pregunta se entiende sin leer el código.
-- [ ] Uso al menos dos filtros, cada uno con un comentario que explica por qué.
+- [ ] En la parte A, ejecuté la propuesta, comprobé con conteos qué hace cada decisión y propuse una alternativa con cuentas que cuadran.
+- [ ] Respondí el seguimiento con una predicción **antes** de ejecutar.
+- [ ] En la parte B, mi pregunta se entiende sin leer el código y uso al menos dos filtros comentados.
 - [ ] Digo cuántos jugadores quedan, cuántos excluí y cuántos no tenían el dato.
-- [ ] Probé una alternativa a uno de mis filtros y expliqué mi elección.
-- [ ] Mi conclusión no afirma más de lo que muestran mis números.
+- [ ] Mis conclusiones no afirman más de lo que muestran mis números.
 - [ ] El archivo compila con Knit.
 - [ ] `sesion2_tarea.Rmd` está en `sesion-2/` y su historial muestra dos versiones con mensajes descriptivos.
 
@@ -658,19 +571,11 @@ El objetivo es practicar lo que hace útil a GitHub: que una versión nueva no b
 
 | Criterio | Qué se revisa |
 |----------|---------------|
-| Pregunta y variables | La pregunta es concreta y las columnas elegidas sirven para responderla |
-| Filtros | Al menos dos condiciones correctas y comentadas |
-| Comprobación | Incluidos, excluidos y faltantes contados; las cuentas cuadran |
-| Justificación | Se compara una alternativa y se explica la decisión con su efecto en el resultado |
-| Conclusión | Dice a quiénes se refiere y no exagera |
+| Evaluación de la propuesta (parte A) | Compruebas con datos lo que hace cada decisión, explicas sus consecuencias para la comparación y propones una alternativa justificada |
+| Seguimiento | Tu predicción y tu explicación muestran que entiendes por qué el resultado cambia o no cambia |
+| Selección propia (parte B) | Pregunta concreta, al menos dos filtros correctos y comentados, incluidos y excluidos contados |
+| Justificación | Comparas al menos una alternativa y explicas tu elección con su efecto en el resultado |
+| Conclusiones | Dicen a quiénes se refieren y no exageran |
 | Versiones | Dos versiones en el historial, con mensajes que explican el cambio |
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Notas para quien imparte la sesión</summary>
-
-- Conviene dedicar tiempo a que `NA < 4.4` dé `NA` y a la técnica de "hacer que las cuentas cuadren": es la comprobación que más se reutiliza en el resto del curso.
-- Si la actividad central se alarga, el Ejercicio 2 (corchetes) puede resolverse en conjunto en cinco minutos; el Ejercicio 3 es el que prepara la tarea.
-- En la tarea, el paso 5 obliga a subir dos versiones del mismo archivo. Es la práctica de control de cambios de esta sesión; revise que el historial las muestre.
-</details>
-```
+Puede haber más de una alternativa válida en la parte A. Se evalúa que la tuya esté comprobada y justificada, no que coincida con una respuesta única.

@@ -10,26 +10,18 @@ output:
     toc_depth: 2
     theme: flatly
     highlight: tango
-params:
-  soluciones: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##",
                       fig.width = 7, fig.height = 4.5)
 
-# El ejemplo resuelto y las notas para el profesor se muestran plegados.
-# Para generar una versión sin ellos:
-# rmarkdown::render("Sesion_5_Proyecto_de_scouting.Rmd", params = list(soluciones = FALSE))
-mostrar_sol <- if (exists("params")) isTRUE(params$soluciones) else TRUE
 
 # Ancho de impresión mayor para que las tablas no se corten en el HTML
 options(width = 100)
 ```
 
 ```{css, echo=FALSE}
-details.solucion { border-left: 4px solid #18bc9c; background: #f4faf8; padding: 0.5em 1em; margin: 1em 0; }
-details.solucion summary { cursor: pointer; font-weight: bold; }
 .tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
 .ia { border-left: 4px solid #eb6834; background: #fdf5f1; padding: 0.6em 1em; margin: 1em 0; }
 .aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
@@ -141,7 +133,7 @@ No es un procedimiento que haya que seguir al pie de la letra. Es una lista de c
 
 # 2. Cómo se evalúa
 
-Usar IA **no resta puntos**. Tampoco los suma, y no es obligatorio. Lo que se evalúa es si entiendes, verificas y puedes justificar lo que presentas, lo hayas escrito tú o no.
+Usar IA **no resta puntos**. Tampoco los suma, y no es obligatorio. Lo que se evalúa es si entiendes, verificas y puedes justificar lo que presentas, lo hayas escrito tú o no. Como en las tareas anteriores, el proyecto incluye una decisión propuesta que tienes que evaluar (sección 5.4): puede ser adecuada para tu pregunta o no. Se valora que la compruebes con datos y justifiques lo que haces con ella.
 
 | Criterio | Insuficiente | En desarrollo | Logrado |
 |----------|--------------|---------------|---------|
@@ -187,8 +179,8 @@ Elige una de estas preguntas o propón una propia (consúltala con el profesor e
 **C. Corredores y Speed Score.** Entre los corredores (`RB`), ¿el Speed Score distingue mejor a los grupos del draft que el tiempo en 40 yardas por sí solo?
 *Pistas:* revisa la sesión 3 para la definición y las unidades. Hay 14 corredores sin tiempo.
 
-**D. Universidades.** ¿De qué universidades conviene seguir de cerca a los prospectos? ¿Importa más cuántos jugadores elegidos aporta una universidad o qué proporción de sus jugadores es elegida?
-*Pistas:* hay 253 universidades y 71 tienen un solo jugador en el archivo. Piensa qué significa una proporción de elegidos del 100% con un solo jugador.
+**D. Tight ends: ¿receptores grandes o linieros rápidos?** Los *tight ends* (`TE`) bloquean y también reciben pases. Por su peso y su velocidad, ¿se parecen más a los receptores abiertos (`WR`) o a los linieros ofensivos (`C`, `OG`, `OT`)?
+*Pistas:* "parecerse" hay que definirlo con medidas concretas y compararlo con los dos grupos a la vez; el peso y el tiempo tienen unidades distintas, así que no los sumes.
 
 **E. Pregunta propia.** Debe poder responderse con las columnas de `NFL.csv` y con las herramientas del curso.
 
@@ -232,6 +224,28 @@ Los datos ya están cargados en el bloque de preparación. Inspecciona lo que se
 ```
 
 *A quiénes incluí, a quiénes excluí y por qué. ¿Cuadran las cuentas?*
+
+**Una decisión que debes evaluar.** El jefe de scouting te sugiere: *"Para comparar a todos con la misma información, quédate solo con los jugadores que tienen registradas las seis pruebas físicas."* Y te pasa este código:
+
+```r
+completos <- jugadores %>%
+  filter(!is.na(Sprint_40yd), !is.na(Vertical_Jump), !is.na(Bench_Press_Reps),
+         !is.na(Broad_Jump), !is.na(Agility_3cone), !is.na(Shuttle))
+```
+
+Aplícalo a tu muestra y responde con código: ¿cuántos jugadores de tu muestra quedan y cuántos pierdes? ¿Se pierden en la misma proporción en todos tus grupos de comparación? ¿Qué prueba es la que más jugadores elimina? Después decide si adoptas la sugerencia, la modificas o la descartas **para tu pregunta**, y justifícalo en la tabla de decisiones (5.12) y en la bitácora (5.13).
+
+*Seguimiento:* antes de ejecutar, predice cuántos jugadores de tu muestra recuperarías si quitaras solo la condición de la prueba con más faltantes. Después compruébalo y, si el resultado no coincide con tu predicción, averigua por qué.
+
+```{r p-completos}
+# completos <- mi_muestra %>%
+#   filter(!is.na(Sprint_40yd), !is.na(Vertical_Jump), !is.na(Bench_Press_Reps),
+#          !is.na(Broad_Jump), !is.na(Agility_3cone), !is.na(Shuttle))
+#
+# nrow(mi_muestra) - nrow(completos)   # ¿cuántos pierdo?
+```
+
+*Qué encontré y qué decidí:*
 
 ## 5.5 Variable derivada
 
@@ -354,8 +368,7 @@ En los últimos minutos, el profesor (o un compañero, con esta lista) te hará 
 6. Lee tu segunda conclusión. ¿Describe una asociación o afirma una causa? ¿Cómo la reformularías?
 7. ¿Qué parte del código generó una IA? ¿Cómo comprobaste que hacía lo que querías?
 8. Muéstrame en tu bitácora o en tu historial de GitHub un cambio que hayas hecho. ¿Por qué lo hiciste y qué efecto tuvo?
-
-**Para quien evalúa.** Señales de que el análisis no es del todo propio: el estudiante no puede explicar una función que usó; los números del texto no coinciden con los de la salida de R; no sabe cuántos jugadores tiene su muestra; las conclusiones dicen cosas que ninguna tabla ni gráfica muestra. Ninguna de estas señales depende de si se usó IA.
+9. ¿Qué hiciste con la sugerencia de quedarte solo con los jugadores que tienen las seis pruebas? Muéstrame el número que te hizo decidir.
 
 ---
 
@@ -423,6 +436,7 @@ Envía, por el medio que indique el profesor, el enlace a tu repositorio y el en
 - [ ] `sesion-5/proyecto_final.Rmd` y su HTML están subidos y son la versión final.
 - [ ] Descargué el ZIP del repositorio, compilé el proyecto desde ahí y obtuve los mismos resultados.
 - [ ] El proyecto tiene las cinco partes, las dos gráficas (al menos una en versión A y B), la bitácora y el registro de IA.
+- [ ] Evalué la sugerencia de quedarme solo con jugadores con las seis pruebas y justifiqué mi decisión con conteos.
 - [ ] El historial muestra los cambios principales con mensajes claros.
 - [ ] No hay contraseñas, tokens ni datos personales innecesarios.
 - [ ] Envié el enlace al repositorio y el enlace al commit final.
@@ -469,24 +483,19 @@ En ninguno de esos casos el código falló. Lo que permitió ver el problema fue
 
 Un proyecto completo con una pregunta que no está en la lista, para que veas el nivel de detalle esperado. Es un ejemplo, no la única forma de hacerlo. Incluye las dos versiones de cada gráfica.
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver el ejemplo resuelto</summary>
-
-**B.1 Pregunta**
+### B.1 Pregunta
 
 *En lenguaje cotidiano:* cuando evaluamos linieros ofensivos, ¿nos debería importar más el peso o la velocidad?
 
 *En versión precisa:* entre los linieros ofensivos (`C`, `OG`, `OT`) del Combine 2009-2019, ¿qué diferencia más a los elegidos en primera ronda de los demás: el peso o el tiempo en 40 yardas?
 
-**B.2 Lo que esperaba**
+### B.2 Lo que esperaba
 
 Esperaba que los de primera ronda fueran más pesados: para un liniero, el tamaño parece la cualidad más obvia. La velocidad, en cambio, me parecía secundaria para una posición que casi no corre distancias largas.
 
-**B.3 Inspección**
-```
+### B.3 Inspección
 
-```{r ej-inspeccion, eval = mostrar_sol, echo = mostrar_sol}
+```{r ej-inspeccion}
 linieros <- jugadores %>%
   filter(Position_Type == "offensive_lineman")
 
@@ -497,17 +506,15 @@ sum(is.na(linieros$Sprint_40yd))
 table(linieros$Year[is.na(linieros$Sprint_40yd)])
 ```
 
-```{asis, echo = mostrar_sol}
 Hay 555 linieros ofensivos. Todos tienen peso; 26 no tienen tiempo en 40 yardas, y los 26 son de 2017, 2018 o 2019.
 
-**B.4 Selección**
+### B.4 Selección
 
 Incluyo a todos los linieros ofensivos. No excluyo a nadie al principio; los 26 sin tiempo quedan fuera solo de los cálculos de velocidad (lo indico en cada tabla y gráfica).
 
-**B.5 Variables derivadas**
-```
+### B.5 Variables derivadas
 
-```{r ej-variables, eval = mostrar_sol, echo = mostrar_sol}
+```{r ej-variables}
 linieros <- linieros %>%
   mutate(peso_lb = Weight * 2.20462,
          grupo_draft = case_when(
@@ -522,13 +529,11 @@ table(linieros$Year, linieros$grupo_draft)[, "Primera ronda"]   # nunca más de 
 range(linieros$peso_lb)                                           # ¿pesos plausibles?
 ```
 
-```{asis, echo = mostrar_sol}
 Peso en libras (para hablar en las unidades del cuerpo técnico) y grupo del draft, construido como en la sesión 3. Ningún año tiene más de 9 linieros de primera ronda, y los pesos van de unas 273 a 364 libras: valores razonables para la posición.
 
-**B.6 Resumen por grupos**
-```
+### B.6 Resumen por grupos
 
-```{r ej-resumen, eval = mostrar_sol, echo = mostrar_sol}
+```{r ej-resumen}
 linieros %>%
   group_by(grupo_draft) %>%
   summarise(jugadores = n(),
@@ -539,15 +544,13 @@ linieros %>%
             tiempo_mediano = median(Sprint_40yd, na.rm = TRUE))
 ```
 
-```{asis, echo = mostrar_sol}
 El peso es prácticamente igual en los tres grupos (unas 312-313 libras de media). El tiempo en 40 yardas no: 5.15 segundos de media en primera ronda, 5.24 en rondas 2 a 7 y 5.31 entre los no elegidos. Con la mediana el orden es el mismo.
 
-**B.7 Gráfica 1: peso y tiempo por grupo del draft**
+### B.7 Gráfica 1: peso y tiempo por grupo del draft
 
 *Versión A (sencilla).*
-```
 
-```{r ej-grafica-1a, eval = mostrar_sol, echo = mostrar_sol}
+```{r ej-grafica-1a}
 linieros_con_tiempo <- linieros %>%
   filter(!is.na(Sprint_40yd))
 
@@ -558,11 +561,9 @@ ggplot(linieros_con_tiempo, aes(x = peso_lb, y = Sprint_40yd)) +
        x = "Peso (libras)", y = "Tiempo en 40 yardas (segundos)")
 ```
 
-```{asis, echo = mostrar_sol}
 *Versión B (detallada).* Mismos datos. Añado a todos los linieros en gris de fondo para comparar cada grupo con el total, una línea horizontal con la mediana del tiempo de cada grupo, colores de un mismo azul ordenados de oscuro (primera ronda) a claro (no elegidos), y una nota con los excluidos.
-```
 
-```{r ej-grafica-1b, eval = mostrar_sol, echo = mostrar_sol, fig.width = 9, fig.height = 4.8}
+```{r ej-grafica-1b, fig.width = 9, fig.height = 4.8}
 colores_draft <- c("Primera ronda" = "#104281", "Rondas 2 a 7" = "#2a78d6", "No elegido" = "#86b6ef")
 
 # factor() fija el orden de los paneles: primero la primera ronda, al final los no elegidos
@@ -590,7 +591,6 @@ ggplot(linieros_b, aes(x = peso_lb, y = Sprint_40yd)) +
   tema_informe
 ```
 
-```{asis, echo = mostrar_sol}
 | Decisión nueva en B | Qué problema resuelve | ¿Estética o interpretación? |
 |---------------------|-----------------------|------------------------------|
 | Línea y etiqueta de la mediana del tiempo | La diferencia entre grupos se lee sin estimarla a ojo | Interpretación |
@@ -600,12 +600,11 @@ ggplot(linieros_b, aes(x = peso_lb, y = Sprint_40yd)) +
 | Título y subtítulo con el hallazgo | El lector sabe qué buscar | Interpretación (el título dice solo lo que se ve) |
 | Nota con excluidos y fuente | Trazabilidad | Interpretación |
 
-**B.8 Gráfica 2: el tiempo dentro de cada posición**
+### B.8 Gráfica 2: el tiempo dentro de cada posición
 
 *Versión A (sencilla).*
-```
 
-```{r ej-grafica-2a, eval = mostrar_sol, echo = mostrar_sol}
+```{r ej-grafica-2a}
 tiempos_posicion <- linieros_con_tiempo %>%
   group_by(Position, grupo_draft) %>%
   summarise(jugadores = n(),
@@ -620,11 +619,9 @@ ggplot(tiempos_posicion, aes(x = tiempo_medio, y = Position, color = grupo_draft
        x = "Tiempo medio (segundos)", y = "Posición")
 ```
 
-```{asis, echo = mostrar_sol}
 *Versión B (detallada).* Mismos datos. Nombres de posición en español, una línea gris que une los tres grupos de cada posición para ver el rango, los mismos azules ordenados que en la gráfica 1 y el número de jugadores de primera ronda en el subtítulo, porque es el grupo más pequeño.
-```
 
-```{r ej-grafica-2b, eval = mostrar_sol, echo = mostrar_sol, fig.width = 8.5, fig.height = 4.5}
+```{r ej-grafica-2b, fig.width = 8.5, fig.height = 4.5}
 tiempos_posicion <- tiempos_posicion %>%
   mutate(posicion = case_when(Position == "C"  ~ "Centro (C)",
                               Position == "OG" ~ "Guardia (OG)",
@@ -646,13 +643,11 @@ ggplot(tiempos_posicion, aes(x = tiempo_medio, y = posicion, color = grupo_draft
   theme(legend.position = "top", legend.justification = "left")
 ```
 
-```{asis, echo = mostrar_sol}
 Entre los tackles (`OT`) el orden es claro: primera ronda, rondas 2 a 7, no elegidos. Entre los guardias (`OG`) los no elegidos son más lentos, pero primera ronda y rondas 2 a 7 casi coinciden. Entre los centros (`C`) no hay diferencia, aunque solo 6 centros de primera ronda tienen tiempo registrado. El subtítulo de la versión B deja visible ese tamaño tan pequeño, que en la versión A no se veía.
 
-**B.9 Comprobaciones**
-```
+### B.9 Comprobaciones
 
-```{r ej-comprobaciones, eval = mostrar_sol, echo = mostrar_sol}
+```{r ej-comprobaciones}
 # 1. Las cuentas cuadran: los tres grupos suman el total
 sum(table(linieros$grupo_draft)) == nrow(linieros)
 
@@ -669,15 +664,13 @@ linieros %>%
 nrow(linieros_con_tiempo)
 ```
 
-```{asis, echo = mostrar_sol}
 Las cuentas cuadran. La composición sí cambia: dos tercios de los linieros de primera ronda son tackles, frente a menos de la mitad en los otros dos grupos. Por eso la gráfica 2 separa por posición. (`prop.table(..., margin = 1)` calcula porcentajes por fila; es una función que no vimos en clase: la busqué con `?prop.table` y comprobé que cada fila sumara 100.) Las dos versiones de cada gráfica usan los mismos 529 linieros con tiempo.
 
-**B.10 Alternativa comparada**
+### B.10 Alternativa comparada
 
 Todos los faltantes de tiempo son de 2017 a 2019. ¿Cambia algo si me quedo solo con 2009-2016, donde no falta ningún tiempo?
-```
 
-```{r ej-alternativa, eval = mostrar_sol, echo = mostrar_sol}
+```{r ej-alternativa}
 linieros %>%
   filter(Year <= 2016) %>%
   group_by(grupo_draft) %>%
@@ -687,10 +680,9 @@ linieros %>%
             tiempo_medio = mean(Sprint_40yd))
 ```
 
-```{asis, echo = mostrar_sol}
 Con 2009-2016 el patrón es el mismo (5.16, 5.23 y 5.31 segundos; pesos casi idénticos). Presento la versión con todos los años, que usa más jugadores, y menciono que el resultado no depende de los años con faltantes.
 
-**B.11 Conclusiones**
+### B.11 Conclusiones
 
 1. **El peso no distingue a los grupos del draft entre los linieros ofensivos.** Elegidos en primera ronda, en otras rondas y no elegidos pesan, en promedio, unas 312-313 libras (tabla B.6, gráfica 1). Contra lo que esperaba, el tamaño no separa a los grupos; probablemente porque todos los que llegan al Combine ya cumplen con un tamaño mínimo para la posición.
 2. **El tiempo en 40 yardas sí se asocia con el grupo del draft.** Los de primera ronda corrieron en 5.15 segundos de media, frente a 5.24 en rondas 2 a 7 y 5.31 entre los no elegidos (tabla B.6). El resultado se mantiene al quitar los años con faltantes (B.10).
@@ -698,11 +690,11 @@ Con 2009-2016 el patrón es el mismo (5.16, 5.23 y 5.31 segundos; pesos casi id�
 
 **Recomendación.** Para comparar prospectos de línea ofensiva, el peso por sí solo aporta poco. El tiempo en 40 yardas, sobre todo en tackles, acompaña a la posición en el draft y puede usarse como una señal entre otras, no como criterio de corte.
 
-**B.12 Limitación principal**
+### B.12 Limitación principal
 
 Es una asociación, no una causa. No sé si los equipos eligen antes a los linieros más rápidos *por* su velocidad o por otras cualidades que este archivo no registra (rendimiento en la universidad, técnica, lesiones) y que podrían ir de la mano con la velocidad. Además, la primera ronda incluye solo 63 linieros, y 8 centros: las conclusiones por posición son frágiles.
 
-**B.13 Decisiones**
+### B.13 Decisiones
 
 | Decisión | Alternativa que descarté | Por qué elegí esta |
 |----------|--------------------------|--------------------|
@@ -711,7 +703,7 @@ Es una asociación, no una causa. No sé si los equipos eligen antes a los linie
 | Media y mediana | Solo la media | Comprobar que el orden no depende de unos pocos valores extremos |
 | Separar por posición en la gráfica 2 | No separar | La composición de los grupos es distinta (B.9) |
 
-**B.14 Bitácora de cambios**
+### B.14 Bitácora de cambios
 
 | Fecha | Qué cambié | Por qué | Cómo lo comprobé | ¿Cambió el resultado? |
 |-------|------------|---------|------------------|------------------------|
@@ -720,7 +712,7 @@ Es una asociación, no una causa. No sé si los equipos eligen antes a los linie
 | (día 2) | Agregué la composición por posición y la gráfica 2 | Vi que había más tackles en primera ronda | Porcentajes por fila que suman 100 | Matiza la conclusión 2: la diferencia es clara en tackles, no en centros |
 | (día 2) | Probé quitar 2017-2019 | Todos los faltantes de tiempo eran de esos años | Repetí la tabla con `Year <= 2016` | No: mismo patrón |
 
-**B.15 Registro de uso de IA**
+### B.15 Registro de uso de IA
 
 *(Ejemplo ilustrativo de cómo llenarlo.)*
 
@@ -728,8 +720,6 @@ Es una asociación, no una causa. No sé si los equipos eligen antes a los linie
 |-------------|-------------------------|---------------------------------|------------------|
 | "¿Cómo calculo en R el porcentaje de cada posición dentro de cada grupo del draft?" | La función `prop.table()` con `margin = 1` | Agregué `round()` y `100 *` para leerlo en porcentajes. Rechacé su sugerencia de quitar a los jugadores sin tiempo de toda la tabla, porque la composición no depende del tiempo | Verifiqué que cada fila sumara 100 y que coincidiera con `table()` hecho a mano para la primera ronda (42 de 63 tackles) |
 
-</details>
-```
 
 ---
 
@@ -750,14 +740,3 @@ Antes de empezar tu proyecto, o si quieres practicar después, resuelve esta var
 7. Escribe dos conclusiones y una limitación, y una fila de bitácora.
 
 **Una pista sin respuesta:** los *defensive ends* y los *defensive tackles* tienen pesos muy distintos entre sí. Antes de concluir nada sobre el peso, comprueba si los tres grupos del draft tienen la misma proporción de cada posición.
-
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Notas para quien imparte la sesión</summary>
-
-- Conviene aprobar las preguntas propias en los primeros diez minutos y empujar hacia preguntas pequeñas. El proyecto tiene que poder terminarse en clase en una versión básica; la entrega final permite pulirlo.
-- Si no hay tiempo para defensas individuales, pueden hacerse en parejas con la lista de preguntas de la sección 6; la pregunta 8 conecta la defensa con la bitácora y el historial.
-- La variante del Anexo C no tiene solución publicada a propósito. Si se usa como práctica evaluada, conviene revisar en especial el paso 6 (comparación dentro de cada posición): obliga a separar lo que se debe a la mezcla de `DE` y `DT` en cada grupo de lo que se mantiene dentro de cada posición.
-- Para evaluar la entrega final, el enlace al commit final indica exactamente qué versión revisar. La prueba de reproducibilidad (descargar el ZIP y compilar) puede repetirse en dos minutos.
-</details>
-```

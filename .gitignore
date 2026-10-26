@@ -1,3 +1,7 @@
 .DS_Store
 .Rhistory
 .RData
+
+# Notas privadas del profesor (soluciones y trampas de las tareas): no publicar
+Curso_Programar_con_IA_NFL/profesor/
+*_profesor.zip

@@ -10,26 +10,17 @@ output:
     toc_depth: 2
     theme: flatly
     highlight: tango
-params:
-  soluciones: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##",
                       fig.width = 7, fig.height = 4.5)
 
-# Las soluciones y las notas para el profesor se muestran plegadas.
-# Para generar una versión sin ellas:
-# rmarkdown::render("Sesion_4_Visualizar_y_comparar.Rmd", params = list(soluciones = FALSE))
-mostrar_sol <- if (exists("params")) isTRUE(params$soluciones) else TRUE
-
 # Ancho de impresión mayor para que las tablas no se corten en el HTML
 options(width = 100)
 ```
 
 ```{css, echo=FALSE}
-details.solucion { border-left: 4px solid #18bc9c; background: #f4faf8; padding: 0.5em 1em; margin: 1em 0; }
-details.solucion summary { cursor: pointer; font-weight: bold; }
 .tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
 .ia { border-left: 4px solid #eb6834; background: #fdf5f1; padding: 0.6em 1em; margin: 1em 0; }
 .aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
@@ -119,18 +110,6 @@ a) ¿Qué variables necesitas? ¿De qué tipo es cada una: numérica o categóri
 b) ¿Qué tendría que verse en la gráfica para que la respuesta fuera "sí"? ¿Y para que fuera "no mucho"?
 
 c) Recuerda la tabla de la sesión 3: los no elegidos tardaban, en promedio, unas pocas centésimas más. ¿Cómo se podría hacer que esa diferencia pareciera enorme? ¿Y que pareciera nula?
-
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver comentario</summary>
-
-a) `Sprint_40yd` (numérica, en segundos) y `Drafted` (categórica: `Yes`/`No`). Quizá también la posición, porque ya vimos que la velocidad depende mucho de ella.
-
-b) Para un "sí" claro, los tiempos de los elegidos tendrían que ser visiblemente menores que los de los no elegidos, no solo en promedio sino en buena parte de la distribución. Si las dos distribuciones se superponen casi por completo, la respuesta honesta es "un poco, en promedio".
-
-c) Cortando el eje vertical cerca de los valores (por ejemplo, empezando en 4.70 segundos), una diferencia de seis centésimas ocupa toda la gráfica. Con el eje desde cero, las dos barras se verían casi iguales. Ninguna de las dos opciones es neutral; por eso hay que saber qué se eligió y por qué.
-</details>
-```
 
 ---
 
@@ -524,45 +503,6 @@ Revisa la gráfica con estas cinco preguntas. Para cada una, escribe qué encont
 
 ```
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-revision, eval = mostrar_sol, echo = mostrar_sol}
-# ¿Cuántos jugadores hay detrás de cada barra, y cuántos quedan fuera?
-jugadores %>%
-  group_by(Drafted) %>%
-  summarise(jugadores = n(),
-            con_tiempo = sum(!is.na(Sprint_40yd)),
-            tiempo_promedio = mean(Sprint_40yd, na.rm = TRUE))
-
-# Diferencia en segundos y en porcentaje (la fila 1 es "No" y la 2 es "Yes")
-diferencia <- tiempos_por_grupo$tiempo_promedio[1] - tiempos_por_grupo$tiempo_promedio[2]
-diferencia
-100 * diferencia / tiempos_por_grupo$tiempo_promedio[2]
-
-# La misma gráfica con el eje desde cero
-ggplot(tiempos_por_grupo, aes(x = Drafted, y = tiempo_promedio)) +
-  geom_col(width = 0.6) +
-  labs(x = "¿Fue elegido en el draft?", y = "Tiempo promedio (segundos)")
-```
-
-```{asis, echo = mostrar_sol}
-1. **Ejes.** El eje dice "Velocidad", pero lo que se grafica es el **tiempo** en segundos. Un tiempo mayor es *más lento*. La barra más alta es la de los no elegidos; quien lea "Velocidad" entenderá que ellos son los más rápidos, justo lo contrario del título. Además, el eje no tiene unidades y las categorías quedaron en inglés (`Yes`/`No`) sin explicación.
-
-2. **Tipo de gráfica.** Cada barra resume más de mil tiempos en un solo número. No se ve cuánto varían los tiempos dentro de cada grupo ni cuánto se superponen los dos grupos. Para eso sirve un histograma, como la versión B de la sección 3.
-
-3. **Escala.** El eje empieza en 4.70. La diferencia real es de unas 6 centésimas de segundo (4.81 frente a 4.75), alrededor del 1.4%. Con el eje cortado, la barra de los no elegidos parece el doble de alta. Con el eje desde cero, las dos barras son casi idénticas. Cortar un eje no siempre es incorrecto, pero en una gráfica de barras la altura se lee como cantidad, y aquí la distorsión es enorme.
-
-4. **Omitidos.** `na.rm = TRUE` dejó fuera a 174 jugadores sin tiempo, y como el promedio se calculó antes de graficar, `ggplot2` ni siquiera avisa. Además, la gráfica mezcla todas las posiciones, incluidos pateadores y despejadores, y ya vimos que la posición explica buena parte del tiempo.
-
-5. **El texto.** "Mucho más rápidos" exagera una diferencia del 1.4%. "Significativamente" sugiere una prueba estadística que nadie hizo. "Confirma que la velocidad es un factor determinante para ser elegido" es una afirmación causal: la gráfica muestra una asociación entre dos grupos, no que la velocidad sea la razón de la elección. Lo único que se sostiene es algo como: "en promedio, los elegidos corrieron unas 6 centésimas más rápido que los no elegidos".
-
-Ninguna de estas cosas es un error de programación. El código hace exactamente lo que dice. Los problemas están en las decisiones: qué graficar, cómo escalarlo, cómo nombrarlo y qué concluir.
-</details>
-```
-
 ## Una versión revisada
 
 Una forma de responder la pregunta del gerente con más honestidad, sin perder claridad: comparar los tiempos **dentro de cada tipo de posición**, con un punto por grupo. Usa los mismos colores que la versión B del histograma, para que "azul = elegidos" signifique lo mismo en todo el informe.
@@ -631,61 +571,6 @@ En cualquier caso:
 ```
 
 *Mi texto para acompañar la gráfica:*
-
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver una solución para cada opción</summary>
-```
-
-```{r sol-opcion-a, eval = mostrar_sol, echo = mostrar_sol}
-# Opción A: misma gráfica de barras, sin distorsiones
-ggplot(tiempos_por_grupo, aes(x = Drafted, y = tiempo_promedio)) +
-  geom_col(width = 0.6, fill = "grey50") +
-  scale_x_discrete(labels = c("No" = "No elegido", "Yes" = "Elegido")) +
-  labs(title = "Tiempo promedio en 40 yardas, elegidos y no elegidos en el draft",
-       x = NULL,
-       y = "Tiempo promedio (segundos; menos es más rápido)",
-       caption = "Todas las posiciones. 174 jugadores sin tiempo no se incluyen. Combine 2009-2019.")
-```
-
-```{r sol-opcion-b, eval = mostrar_sol, echo = mostrar_sol}
-# Opción B: la versión A del histograma con dos mejoras (etiquetas en español y medianas)
-tiempos %>%
-  ggplot(aes(x = Sprint_40yd)) +
-  geom_histogram(binwidth = 0.05) +
-  geom_vline(data = medianas, aes(xintercept = mediana), linewidth = 0.6) +
-  facet_wrap(~ grupo, ncol = 1) +
-  labs(title = "Tiempos en 40 yardas de elegidos y no elegidos",
-       subtitle = "La línea vertical marca la mediana de cada grupo",
-       x = "Tiempo (segundos; menos es más rápido)",
-       y = "Número de jugadores",
-       caption = "174 jugadores sin tiempo no se incluyen. Combine 2009-2019.")
-```
-
-```{r sol-opcion-c, eval = mostrar_sol, echo = mostrar_sol}
-# Opción C: una sola posición
-jugadores %>%
-  filter(Position == "CB", !is.na(Sprint_40yd)) %>%
-  mutate(grupo = ifelse(Drafted == "Yes", "Elegidos", "No elegidos")) %>%
-  ggplot(aes(x = Sprint_40yd)) +
-  geom_histogram(binwidth = 0.03) +
-  facet_wrap(~ grupo, ncol = 1) +
-  labs(title = "Cornerbacks: tiempos en 40 yardas",
-       x = "Tiempo (segundos; menos es más rápido)",
-       y = "Número de jugadores",
-       caption = "11 cornerbacks sin tiempo no se incluyen. Combine 2009-2019.")
-```
-
-```{asis, echo = mostrar_sol}
-**Textos posibles.**
-
-- A: "En promedio, los jugadores elegidos corrieron las 40 yardas unas 6 centésimas de segundo más rápido que los no elegidos (4.75 frente a 4.81 segundos)."
-- B: "Los tiempos de los elegidos se concentran algo más a la izquierda (más rápidos): su mediana es 4.66 segundos, frente a 4.73 de los no elegidos. Pero las dos distribuciones se superponen mucho: hay no elegidos muy rápidos y elegidos lentos." Ojo al leer esta gráfica: el panel de elegidos tiene casi el doble de jugadores (2,155 frente a 1,148), así que hay que comparar la posición de las distribuciones, no la altura de las barras.
-- C: "Entre los *cornerbacks*, los elegidos tienden a ser más rápidos: 7 de cada 10 no elegidos tardaron más de 4.5 segundos, frente a algo más de un tercio de los elegidos. Esto describe una asociación en este grupo de jugadores, no la razón por la que fueron elegidos."
-
-En la opción A, la decisión clave es quitar `coord_cartesian()`: con el eje desde cero, la gráfica muestra que la diferencia es pequeña. Si lo que se quiere es ver diferencias pequeñas, una gráfica de barras no es la herramienta adecuada; un histograma o una gráfica de puntos lo hace sin distorsionar.
-</details>
-```
 
 ## Guardar una gráfica con `ggsave()`
 
@@ -756,29 +641,58 @@ Una gráfica es un argumento. Quien la presenta responde por lo que hace creer, 
 ::: {.tarea}
 **Tiempo estimado:** 30–45 minutos.
 
-**Qué haces:** eliges una pregunta analítica, haces una **gráfica sencilla** (versión A) y una **versión detallada** de esa misma gráfica (versión B), con los mismos datos.
+**Qué haces:** respondes con una gráfica a la pregunta del gerente sobre el salto vertical de los receptores. Partes de una propuesta del cuerpo técnico, la pones a prueba, construyes una **versión sencilla** (A) y una **versión detallada** (B) con los mismos datos, y evalúas la conclusión que te proponen.
 
 **Qué entregas**, en la carpeta `sesion-4/` de tu repositorio:
 
 - `sesion4_tarea.Rmd` (y, si quieres, su HTML), con el código de las dos versiones, la pregunta, la justificación del tipo de gráfica, las decisiones de diseño, la interpretación y una limitación;
 - las dos imágenes exportadas con `ggsave()`, en `sesion-4/figuras/`.
 
+**Qué se valora:** que compruebes que la gráfica representa bien los datos, que justifiques cada decisión de diseño y que lo que afirmas se vea en la gráfica. Que el código se ejecute es necesario, pero no suficiente.
+
 **IA:** opcional. Si la usas, registra en la bitácora qué propuso, qué conservaste y qué rechazaste, y cómo comprobaste que no distorsiona los datos.
 :::
 
-## Paso 1. La pregunta y el tipo de gráfica
+## El encargo
 
-Escribe una pregunta que se responda con una gráfica, distinta de las de clase. Por ejemplo: *¿Cómo se reparte el salto vertical de los receptores elegidos y no elegidos?*, *¿Cuántos jugadores de cada tipo de posición hay en cada año?*, *¿Se relacionan el salto largo y el salto vertical?*
+El gerente general pregunta: **¿saltan más los receptores (`WR`) elegidos en el draft que los no elegidos?** Un asistente del cuerpo técnico propone:
 
-Justifica el tipo de gráfica a partir de las variables:
+> "Haz un histograma del salto vertical con un panel para elegidos y otro para no elegidos. Usa intervalos de 2 centímetros (`binwidth = 2`): es un número redondo y fácil de explicar. Acompáñalo con esta frase: *Los receptores elegidos saltan más; entrenar el salto vertical aumenta las probabilidades de ser elegido.*"
 
-| Si tu pregunta es sobre... | Variables | Gráfica habitual |
-|----------------------------|-----------|------------------|
-| Cuántos hay de cada categoría | una categórica | barras |
-| Cómo se reparte una medida | una numérica (y quizá grupos) | histograma, con paneles por grupo si comparas |
-| Si dos medidas se mueven juntas | dos numéricas | dispersión |
+## Lo que tienes que hacer
 
-## Paso 2. Crea tu archivo
+**1. Pregunta y tipo de gráfica.** Escribe la pregunta con tus palabras, qué variables usa (y de qué tipo son) y por qué un histograma con un panel por grupo es una opción razonable.
+
+**2. Versión A con la propuesta tal como está.**
+
+```r
+receptores <- filter(jugadores, Position == "WR")
+
+grafica_a <- ggplot(receptores, aes(x = Vertical_Jump)) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~ Drafted, ncol = 1) +
+  labs(title = "Salto vertical de los receptores",
+       x = "Salto vertical (cm)", y = "Número de jugadores")
+grafica_a
+```
+
+**3. Comprueba la gráfica antes de interpretarla.**
+
+- Describe la forma de cada histograma. ¿Hay algo que te parezca extraño?
+- ¿Cuántos receptores no aparecen en la gráfica y por qué? (Lee los avisos.)
+- ¿Qué valores de salto vertical aparecen realmente en los datos? Prueba `table(receptores$Vertical_Jump)` y fíjate en la distancia entre un valor y el siguiente. Recuerda lo que vimos con la estatura en la sección 3.
+
+**4. Evalúa el ancho de intervalo.** ¿Es `binwidth = 2` adecuado para estos datos? ¿Qué consecuencias tiene para la lectura de la gráfica? Prueba al menos otro valor que puedas justificar a partir del paso 3 y explica cuál eliges y por qué.
+
+**5. Versión B detallada.** Con los mismos jugadores, construye la versión para un informe: el ancho de intervalo que justificaste, etiquetas y unidades, el número de jugadores de cada grupo, la mediana de cada grupo (como en la sección 3), una nota con los excluidos y la fuente. Puedes copiar el tema `tema_informe` y los colores de clase (`"#2a78d6"`, `"#eb6834"`). Completa la tabla de decisiones: qué añadiste, qué problema resuelve y si es estético o cambia la interpretación. Incluye algo que hayas probado y **descartado**.
+
+**6. Evalúa la frase propuesta.** ¿Qué parte de *"Los receptores elegidos saltan más; entrenar el salto vertical aumenta las probabilidades de ser elegido"* se sostiene con tu gráfica y qué parte no? Escribe la frase que tú pondrías debajo de la versión B.
+
+**7. Seguimiento.** **Sin ejecutar**, predice qué aspecto tendrá el histograma con `binwidth = 5.08`. ¿Aparecerá lo que viste en el paso 3? ¿Por qué? Después compruébalo.
+
+**8. Exporta y sube.** Guarda las dos versiones con `ggsave()` y súbelas como se explica abajo.
+
+## Crea tu archivo con esta estructura
 
 *File > New File > R Markdown...*, borra el contenido de ejemplo, pega esta plantilla y guárdala como `sesion4_tarea.Rmd` en `curso-programacion-r/sesion-4/`.
 
@@ -794,49 +708,52 @@ library(dplyr)
 library(ggplot2)
 ruta_datos <- if (file.exists("datos/NFL.csv")) "datos/NFL.csv" else "../datos/NFL.csv"
 jugadores <- read.csv(ruta_datos)
+receptores <- filter(jugadores, Position == "WR")
 ```
 
 ## 1. Lo que quería conseguir
 
-Mi pregunta, las variables que uso (y su tipo) y por qué elegí este tipo de gráfica:
+La pregunta, las variables que uso (y su tipo) y por qué elegí este tipo de gráfica:
 
-## 2. Versión A: sencilla
+## 2. Versión A: la propuesta del cuerpo técnico
 
 ```{r version-a}
-grafica_a <- ggplot(jugadores, aes(x = Vertical_Jump)) +   # cambia por tus datos y variables
-  geom_histogram(binwidth = 2.54) +
-  labs(title = "...", x = "... (unidades)", y = "...")
+grafica_a <- ggplot(receptores, aes(x = Vertical_Jump)) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~ Drafted, ncol = 1) +
+  labs(title = "Salto vertical de los receptores",
+       x = "Salto vertical (cm)", y = "Número de jugadores")
 grafica_a
 ```
 
-## 3. Versión B: detallada
+## 3. Comprobaciones
 
-```{r version-b}
-grafica_b <- grafica_a   # sustitúyelo por tu versión detallada, con los mismos datos
-grafica_b
+```{r comprobaciones}
+# ¿Qué valores aparecen en los datos? ¿Cuántos receptores quedan fuera?
+# Prueba aquí otros anchos de intervalo
 ```
 
-## 4. Decisiones de diseño
+Lo que encontré y el ancho de intervalo que elijo (con su justificación):
+
+## 4. Versión B: detallada
+
+```{r version-b}
+grafica_b <- grafica_a   # sustitúyelo por tu versión detallada, con los mismos jugadores
+grafica_b
+```
 
 | Decisión nueva en B | Qué problema resuelve | ¿Estética o interpretación? |
 |---------------------|-----------------------|------------------------------|
 | | | |
 
-Por qué la versión B comunica mejor que la A:
+Algo que probé y descarté, y por qué:
 
-## 5. Comprobaciones: ¿la versión B distorsiona algo?
+## 5. Conclusión que puedo defender
 
-```{r comprobaciones}
-# Por ejemplo: ¿cuántos jugadores hay en cada versión? ¿cuántos quedaron fuera por NA?
-```
+Qué parte de la frase propuesta se sostiene y cuál no; mi frase para la versión B; una limitación.
+Seguimiento (`binwidth = 5.08`): mi predicción, por qué, y lo que pasó.
 
-Lo que comprobé (escala, unidades, datos incluidos, texto del título):
-
-## 6. Interpretación y limitación
-
-Lo que puedo afirmar con esta gráfica, y una limitación:
-
-## 7. Exportar las imágenes
+## 6. Exportar las imágenes
 
 ```{r exportar}
 dir.create("figuras", showWarnings = FALSE)
@@ -851,28 +768,22 @@ ggsave("figuras/grafica_b.png", plot = grafica_b, width = 21, height = 14, units
 | | | | | |
 ````
 
-## Paso 3. Construye las dos versiones
+## Comprueba que la versión B no distorsiona
 
-1. **Versión A.** El código mínimo para responder la pregunta, con título y ejes con unidades. Nada más.
-2. **Versión B.** Parte de la A y añade **al menos tres** decisiones que mejoren la comunicación: por ejemplo, un título que diga lo que se ve, un subtítulo con el número de jugadores, una línea de referencia (como la mediana), paneles por grupo, etiquetas directas, una nota con los excluidos y la fuente, o el tema `tema_informe` de clase (puedes copiarlo). Si usas colores para distinguir grupos, usa los de clase: `"#2a78d6"` (azul), `"#eb6834"` (naranja) y `"#1baf7a"` (verde azulado), que se distinguen también con daltonismo.
-3. Completa la tabla de decisiones: para cada una, qué problema resuelve y si es estética o cambia lo que se interpreta. Incluye también algo que probaste y **descartaste**, y por qué.
-
-## Paso 4. Comprueba que la versión B no distorsiona
-
-Responde, con código cuando sea posible:
+Antes de dar por buena tu versión B, responde con código cuando sea posible:
 
 - ¿Las dos versiones usan los mismos jugadores? Si la B excluye a alguien, ¿lo dice la nota?
-- Si es una gráfica de barras, ¿el eje empieza en cero?
-- ¿Las unidades están en los ejes? ¿"Menos es mejor" está indicado cuando hace falta (tiempos)?
-- ¿El título afirma algo que la gráfica no muestra?
+- ¿Las unidades están en los ejes?
+- ¿El ancho de intervalo deja ver la forma real de los datos, o crea patrones que no existen?
+- ¿El título o el texto afirman algo que la gráfica no muestra?
 - ¿El color distingue grupos reales o sugiere una jerarquía que no existe?
 
-## Paso 5. Exporta, sube y compara versiones
+## Exporta, sube y compara versiones
 
 1. Pulsa **Knit**. El bloque de exportación crea `figuras/grafica_a.png` y `figuras/grafica_b.png` dentro de tu carpeta `sesion-4`. Ábrelas y comprueba que se leen bien.
 2. Para que el historial muestre cómo mejoraste la gráfica, súbela en dos momentos:
-   - **Primer cambio:** cuando tengas la versión A terminada, sube `sesion4_tarea.Rmd` a `sesion-4/` y arrastra también la carpeta `figuras` (con `grafica_a.png`). Mensaje: *Tarea 4: versión sencilla de la gráfica*.
-   - **Segundo cambio:** con la versión B terminada, vuelve a subir `sesion4_tarea.Rmd` (mismo nombre) y la carpeta `figuras` (ahora con las dos imágenes). Mensaje: *Tarea 4: versión detallada y decisiones de diseño*.
+   - **Primer cambio:** con la versión A y tus comprobaciones, sube `sesion4_tarea.Rmd` a `sesion-4/` y arrastra también la carpeta `figuras` (con `grafica_a.png`). Mensaje: *Tarea 4: versión A y comprobaciones*.
+   - **Segundo cambio:** con la versión B terminada, vuelve a subir `sesion4_tarea.Rmd` (mismo nombre) y la carpeta `figuras` (ahora con las dos imágenes). Mensaje: *Tarea 4: versión B y decisiones de diseño*.
 3. Abre `sesion4_tarea.Rmd` en GitHub y pulsa **History**: haz clic en el segundo cambio para ver, en verde, el código que añadiste para la versión B. Abre `figuras/grafica_b.png` en GitHub para comprobar que la imagen se ve.
 
 ## Errores habituales
@@ -883,37 +794,28 @@ Responde, con código cuando sea posible:
 | La gráfica guardada no es la que esperabas | `ggsave()` sin `plot =` guarda la última gráfica dibujada | Escribe siempre `plot = tu_grafica` |
 | La imagen tiene letras enormes o diminutas | El tamaño de `ggsave()` no corresponde al uso | Ajusta `width` y `height` (y revisa `units`) |
 | `Removed n rows containing...` | Hay `NA` en las variables graficadas | No es un error: di en la nota cuántos jugadores quedaron fuera |
-| Las barras de la versión B son más altas que en la A | Cambiaste el ancho de los intervalos o los datos | Mantén los mismos datos y el mismo `binwidth`, o justifica el cambio |
+| Las medianas no aparecen en su panel | La tabla de medianas no tiene la misma columna que usa `facet_wrap()` | Calcula las medianas agrupando por la misma columna (`Drafted`) |
 
 ## Lista de comprobación
 
 - [ ] La pregunta y la justificación del tipo de gráfica están escritas.
-- [ ] Las dos versiones usan la misma pregunta y los mismos datos (o la diferencia está justificada).
-- [ ] La versión B tiene al menos tres decisiones nuevas, explicadas en la tabla.
-- [ ] Comprobé que la versión B no distorsiona: escala, unidades, datos incluidos y título.
-- [ ] Hay una interpretación y una limitación.
-- [ ] Las dos imágenes están en `sesion-4/figuras/` y se ven en GitHub.
-- [ ] El historial muestra al menos dos versiones con mensajes descriptivos.
+- [ ] Ejecuté la propuesta, comprobé qué valores tienen los datos y justifiqué el ancho de intervalo que elegí.
+- [ ] Las dos versiones usan los mismos jugadores (o la diferencia está justificada).
+- [ ] La versión B tiene al menos tres decisiones nuevas, explicadas en la tabla, e incluye algo descartado.
+- [ ] Evalué la frase propuesta y escribí la mía, sin afirmar más de lo que muestra la gráfica.
+- [ ] Respondí el seguimiento con una predicción **antes** de ejecutar.
+- [ ] Las dos imágenes están en `sesion-4/figuras/` y el historial muestra al menos dos versiones con mensajes descriptivos.
 
 ## Cómo se evalúa
 
 | Criterio | Qué se revisa |
 |----------|---------------|
 | Pregunta y tipo de gráfica | La gráfica responde a la pregunta y el tipo corresponde a las variables |
-| Versión A | Código mínimo, legible, con título y unidades |
-| Versión B | Al menos tres mejoras pertinentes, sin decoración innecesaria |
-| Justificación | La tabla distingue lo estético de lo que cambia la interpretación, e incluye algo descartado |
-| Honestidad | No hay distorsiones (ejes, escalas, exclusiones no declaradas, títulos exagerados) |
-| Interpretación y limitación | Lo que se afirma se ve en la gráfica; la limitación es concreta |
+| Evaluación de la propuesta | Compruebas con los datos si la propuesta los representa bien y justificas el cambio que hagas |
+| Versión B | Al menos tres mejoras pertinentes, sin decoración innecesaria, con la tabla de decisiones |
+| Honestidad | No hay distorsiones (escalas, intervalos, exclusiones no declaradas, títulos exagerados) |
+| Interpretación | Lo que afirmas se ve en la gráfica; distingues asociación de causa; la limitación es concreta |
+| Seguimiento | Tu predicción y tu explicación muestran que entiendes por qué la gráfica cambia (o no) |
 | Archivos y versiones | Rmd e imágenes en `sesion-4/`; dos versiones en el historial |
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Notas para quien imparte la sesión</summary>
-
-- Las versiones A se construyen en clase; las B se leen y se discuten con su tabla de decisiones. Si el tiempo aprieta, basta con discutir a fondo una de las tres versiones B (la del histograma, que responde al encargo) y dejar las otras para que las lean.
-- El error de usar `%>%` en lugar de `+` aparece siempre; está mostrado a propósito. Pida que lean los avisos de `ggplot2` en voz alta.
-- La paleta de las versiones B (azul `#2a78d6`, naranja `#eb6834`, verde azulado `#1baf7a`) se validó para separación con daltonismo. El verde azulado tiene poco contraste con el fondo blanco; por eso, cuando se usa, va acompañado de etiquetas o leyenda.
-- Al hacer Knit, el bloque de `ggsave()` crea la carpeta `figuras/` junto al archivo.
-</details>
-```
+Puede haber más de un ancho de intervalo defendible. Se evalúa que el tuyo esté comprobado y justificado con los datos.

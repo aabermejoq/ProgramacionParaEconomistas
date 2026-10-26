@@ -10,25 +10,16 @@ output:
     toc_depth: 2
     theme: flatly
     highlight: tango
-params:
-  soluciones: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##")
-
-# Las soluciones y las notas para el profesor se muestran plegadas.
-# Para generar una versión sin ellas (por ejemplo, para repartir en clase):
-# rmarkdown::render("Sesion_1_Primeros_pasos.Rmd", params = list(soluciones = FALSE))
-mostrar_sol <- if (exists("params")) isTRUE(params$soluciones) else TRUE
 
 # Ancho de impresión mayor para que las tablas no se corten en el HTML
 options(width = 100)
 ```
 
 ```{css, echo=FALSE}
-details.solucion { border-left: 4px solid #18bc9c; background: #f4faf8; padding: 0.5em 1em; margin: 1em 0; }
-details.solucion summary { cursor: pointer; font-weight: bold; }
 .tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
 .ia { border-left: 4px solid #eb6834; background: #fdf5f1; padding: 0.6em 1em; margin: 1em 0; }
 .aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
@@ -46,7 +37,9 @@ Este archivo es un R Markdown: mezcla texto y bloques de código (*chunks*). Pue
 
 **Tu archivo de trabajo.** Antes de escribir nada, guarda una copia de este documento con *File > Save As...* y el nombre `sesion1_trabajo.Rmd`, en la misma carpeta. Trabaja en esa copia: es tu primer archivo de trabajo y lo subirás a GitHub en la tarea de esta sesión.
 
-Debajo de algunos ejercicios hay un recuadro **Ver solución**. Ábrelo después de intentarlo, no antes: el ejercicio está pensado para que te equivoques un poco.
+Los ejercicios de clase se corrigen en clase, en voz alta: no hay soluciones al final del documento. Inténtalos aunque te equivoques; están pensados para eso.
+
+**Cómo se evalúa este curso.** En las tareas no basta con que el código se ejecute. Se evalúa que puedas explicar qué hace cada línea, que compruebes tus resultados con los datos y que justifiques tus decisiones, hayas escrito el código tú o te lo haya propuesto una IA. Varias tareas incluyen una decisión ya tomada (un umbral, un filtro, una fórmula, una forma de resumir o de graficar) para que la pongas a prueba: puede ser adecuada para la pregunta o no serlo. Lo que cuenta es que la compruebes con los datos, expliques sus consecuencias y, si hace falta, propongas una alternativa razonable. Casi nunca hay una única respuesta válida; sí hay respuestas mejor o peor justificadas.
 
 Para esta sesión no hace falta instalar nada más: todo lo que usaremos viene con R.
 
@@ -70,7 +63,7 @@ Para esta sesión no hace falta instalar nada más: todo lo que usaremos viene c
 | 65–80 | Ejercicio individual: modificar código y describir el archivo |
 | 80–90 | Qué sabemos, qué no sabemos; dónde vivirá tu trabajo (GitHub) |
 
-Después de clase: **Tarea 1**, crear tu repositorio de GitHub y subir este primer archivo (30–45 minutos, instrucciones completas al final del documento).
+Después de clase: **Tarea 1**, una actividad corta con los datos y la creación de tu repositorio de GitHub para subir este primer archivo (instrucciones completas al final del documento).
 
 ---
 
@@ -101,16 +94,6 @@ b)
 c)
 
 Guarda esas respuestas. Al final de la sesión las vamos a contrastar con lo que encontremos.
-
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver comentario</summary>
-
-No hay una respuesta única. Lo importante del inciso a) es que el encargo no es "abrir el archivo", sino **describir qué información hay y qué limitaciones tiene**. Una versión razonable: "Quiere saber qué variables tenemos de cada jugador, cuántos jugadores y años cubre el archivo, y si hay huecos o cosas raras que debamos tener en cuenta antes de comparar prospectos".
-
-Anticipar una cifra, aunque sea a ojo, sirve para detectar resultados absurdos. Si esperabas que un jugador pesara unos 100 kg y R te devuelve 1,000, sabes que algo falló antes de presentarlo.
-</details>
-```
 
 ---
 
@@ -193,23 +176,6 @@ b) Calcula su velocidad en km/h guardando el resultado en un objeto llamado `vel
 ```{r}
 # Escribe aquí tu código
 
-```
-
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-ej2, eval = mostrar_sol, echo = mostrar_sol}
-velocidad_liniero_kmh <- (40 * 0.9144) / 5.50 * 3.6
-velocidad_liniero_kmh
-```
-
-```{asis, echo = mostrar_sol}
-Unos 24 km/h: más lento, como era de esperar si tardó más en recorrer la misma distancia. Si tu resultado hubiera salido mayor que 30, eso debería hacerte sospechar antes de revisar el código: es justo para eso que sirve anticipar.
-
-Otra forma igual de válida es reutilizar el objeto que ya tenías: `distancia_m / 5.50 * 3.6`.
-</details>
 ```
 
 ---
@@ -449,32 +415,6 @@ d) ¿Qué pregunta responde realmente la solución de la IA? Reescríbela en una
 
 e) ¿Cuál de las dos soluciones entiendes mejor? ¿Cuál presentarías al jefe de scouting y por qué?
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-actividad, eval = mostrar_sol, echo = mostrar_sol}
-nrow(jugadores)
-nrow(datos_limpios)
-nrow(jugadores) - nrow(datos_limpios)   # filas que desaparecieron
-table(datos_limpios$Drafted)
-table(datos_limpios$Position_Type)
-```
-
-```{asis, echo = mostrar_sol}
-**Qué hace cada línea.** `na.omit()` elimina toda fila que tenga al menos un `NA` en *cualquier* columna. La segunda línea crea una columna nueva con el peso en libras. `c(media = ..., mediana = ..., desv_est = ...)` arma un vector con nombres. `round(..., 1)` redondea a un decimal. `cat()` imprime un mensaje de texto.
-
-**La diferencia.** La solución del profesor da unas 241.9 libras; la de la IA, 249.5. La columna `Weight` no tiene ningún `NA`, así que eliminar faltantes no era necesario para este cálculo. Sin embargo, `na.omit()` revisa *todas* las columnas y deja solo 1,179 de los 3,477 jugadores. Desaparecen 2,298.
-
-¿Quiénes se quedan? Solo jugadores elegidos en el draft: la columna `Drafted..tm.rnd.yr.` está vacía (`NA`) para todos los no elegidos, así que ninguno sobrevive. Tampoco queda ningún pateador ni despejador (`kicking_specialist`), porque casi ninguno hace todas las pruebas, y queda un solo *quarterback* (`QB`), porque los mariscales casi nunca hacen el press de banca.
-
-**Qué pregunta responde la IA.** "¿Cuánto pesan, en promedio, los jugadores que fueron elegidos en el draft y que tienen registradas todas las pruebas y la edad?". Es una pregunta legítima, pero no es la que hizo el jefe de scouting. Y el mensaje final ("el peso promedio de los jugadores del Combine") es falso para ese subconjunto.
-
-**Cuál presentar.** La del profesor responde la pregunta y se puede explicar en dos frases. La de la IA no tiene ningún error de programación: hace exactamente lo que dice su código. El problema es una decisión (eliminar faltantes "por si acaso") tomada sin relación con la pregunta, y que solo se descubre leyendo y comprobando. Observa también el comentario de la IA: "para evitar errores en los cálculos". Suena razonable, pero omite lo más importante, que se pierden dos tercios de la tabla. Las explicaciones de una IA también hay que comprobarlas.
-</details>
-```
-
 ::: {.ia}
 **Si tienes acceso a una IA.** Pídele lo mismo, pero acotando lo que sabes:
 
@@ -502,33 +442,8 @@ c) Debajo de tu código, escribe un comentario de una línea que diga qué cambi
 ```{r}
 # a)
 
-
 # b)
 
-```
-
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-ej3, eval = mostrar_sol, echo = mostrar_sol}
-# a) La estatura está en metros
-mean(jugadores$Height) * 100      # centímetros
-mean(jugadores$Height) / 0.0254   # pulgadas
-
-# b) Mediana del peso en libras
-median(jugadores$Weight) * 2.20462
-# Cambio: mean() -> median() en el peso. El resultado baja de 241.9 a 231.0 libras.
-```
-
-```{asis, echo = mostrar_sol}
-a) Unos 187.4 cm, o 73.8 pulgadas (casi 6 pies y 2 pulgadas).
-
-b) La mediana (231 libras) es menor que el promedio (241.9). La mediana es el valor que deja a la mitad de los jugadores por debajo y a la mitad por encima; el promedio, en cambio, se deja arrastrar por los valores grandes. Aquí hay un grupo de jugadores muy pesados (los linieros, que superan con frecuencia las 300 libras) que sube el promedio. Ninguna de las dos cifras es "la correcta": describen cosas distintas. En la sesión 3 volveremos a esto.
-
-c) El comentario del final del bloque de solución es un ejemplo. Lo importante es que diga qué cambió y qué efecto tuvo, no que repita el código.
-</details>
 ```
 
 ## Ejercicio 4. La ficha del archivo
@@ -548,29 +463,6 @@ d) ¿El nombre del jugador sirve para identificarlo sin ambigüedad? Pista: prue
 
 ```
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-ej4, eval = mostrar_sol, echo = mostrar_sol}
-table(jugadores$Year)                    # a)
-table(jugadores$Drafted)                 # b)
-# c) No hace falta código nuevo: basta leer la fila NA's del summary() de la sección 4
-sum(jugadores$Player == "Chris Jones")   # d)
-```
-
-```{asis, echo = mostrar_sol}
-a) De 2009 a 2019. Entre 2009 y 2017 hay entre 322 y 333 jugadores por año; 2018 tiene 308 y 2019 solo 220. Con este archivo no podemos saber si en 2019 participaron menos jugadores o si el archivo está incompleto. Antes de comparar años habría que averiguarlo en la fuente original.
-
-b) 2,254 elegidos (`Yes`) y 1,223 no elegidos (`No`).
-
-c) `Agility_3cone` (tres conos), con 1,217 faltantes, seguida de `Shuttle` (1,140) y `Bench_Press_Reps` (905).
-
-d) No. Hay dos filas con el nombre exacto "Chris Jones" (sin código), y otras dos con "Chris Jones" seguido de códigos distintos. Son cuatro personas diferentes. Si algún día tuvieras que unir esta tabla con otra usando el nombre, mezclarías jugadores.
-</details>
-```
-
 ---
 
 # 7. Lo que sabemos y lo que todavía no sabemos
@@ -584,16 +476,6 @@ Ahora completa esta tabla. Es la respuesta que le darías al jefe de scouting, y
 | | |
 | | |
 | | |
-
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver un ejemplo</summary>
-
-**Lo que sabemos.** 3,477 jugadores y 18 variables; años 2009 a 2019; medidas en sistema métrico (deducido de los rangos y comprobado con la estatura); 2,254 elegidos y 1,223 no elegidos; varias pruebas tienen muchos faltantes; el nombre no identifica de forma única a un jugador.
-
-**Lo que no sabemos.** Por qué faltan datos (¿el jugador no hizo la prueba?, ¿se lesionó?, ¿no se registró?); si el archivo incluye a todos los participantes de cada año (2019 se ve incompleto); qué significa exactamente `Age` (¿edad en el Combine?, ¿en el draft?); qué es el código que acompaña a algunos nombres. Algunas de estas preguntas se pueden explorar con R; otras requieren consultar la fuente original de los datos.
-</details>
-```
 
 ---
 
@@ -621,15 +503,50 @@ La configuración de tu repositorio es la **Tarea 1**, para hacer después de cl
 
 ---
 
-# Tarea 1 (después de clase): crea tu repositorio y sube tu primer archivo
+# Tarea 1 (después de clase): una decisión que comprobar y tu primer repositorio
 
 ::: {.tarea}
-**Tiempo estimado:** 30–45 minutos.
+**Tiempo estimado:** 10–15 minutos para la parte A (en RStudio) y 30–45 minutos para la parte B (en GitHub).
 
-**Qué entregas:** el enlace a tu repositorio `curso-programacion-r`, con un `README.md`, una carpeta por sesión, la carpeta `datos/` y tu archivo `sesion1_trabajo.Rmd` dentro de `sesion-1/`, acompañado de una nota breve.
+**Qué entregas:** el enlace a tu repositorio `curso-programacion-r`, con un `README.md`, una carpeta por sesión, la carpeta `datos/` y tu archivo `sesion1_trabajo.Rmd` (con la parte A al final) dentro de `sesion-1/`, acompañado de una nota breve.
 
-**Qué necesitas:** un correo electrónico al que tengas acceso, un navegador, tu archivo `sesion1_trabajo.Rmd` (con tus respuestas de clase) y `NFL.csv`. No necesitas instalar nada ni usar la terminal: todo se hace desde la página web de GitHub.
+**Qué necesitas:** tu archivo `sesion1_trabajo.Rmd` (con tus respuestas de clase), `NFL.csv`, un correo electrónico al que tengas acceso y un navegador. Para la parte B no necesitas instalar nada ni usar la terminal: todo se hace desde la página web de GitHub.
+
+**Qué se valora:** que compruebes con los datos lo que calculas, que expliques tus decisiones y que tu repositorio permita revisar tu trabajo. Que el código se ejecute es necesario, pero no suficiente.
 :::
+
+## Parte A. El IMC que pide el preparador físico
+
+Haz esta parte en tu archivo `sesion1_trabajo.Rmd`, en una sección nueva al final. Escribe un título como `# Tarea 1: IMC` y añade bloques de código con el menú *Code > Insert Chunk* (o `Ctrl + Alt + I`; en Mac, `Cmd + Option + I`). Debajo de cada bloque, escribe tus respuestas como texto normal.
+
+El preparador físico del equipo te escribe:
+
+> "Necesito el IMC promedio de los prospectos del Combine. El IMC es el peso dividido entre la estatura al cuadrado. Usa el peso en libras, que es como lo manejamos aquí, y la estatura en centímetros, que se lee mejor."
+
+**1. Anticipa.** La columna `BMI` del archivo es el índice de masa corporal (IMC). Antes de calcular nada, ejecuta `summary(jugadores$BMI)` y escribe qué valor esperas obtener.
+
+**2. Implementa la propuesta tal como está.** Copia y ejecuta este código (`^2` eleva al cuadrado):
+
+```r
+peso_lb     <- jugadores$Weight * 2.20462   # peso en libras
+estatura_cm <- jugadores$Height * 100       # estatura en centímetros
+imc_propuesto <- peso_lb / estatura_cm^2
+mean(imc_propuesto)
+```
+
+**3. Comprueba.** Compara el resultado con lo que anticipaste y con `mean(jugadores$BMI)`. Escribe lo que observas.
+
+**4. Evalúa la decisión.** En tres o cuatro frases: ¿es adecuado calcular el IMC con esas unidades para lo que pide el preparador? ¿Qué pasaría si le entregaras ese número? ¿Qué alternativa propones? Escribe y ejecuta tu alternativa, y comprueba que su resultado es coherente con la columna `BMI`.
+
+**5. Seguimiento.**
+
+a) Sin ejecutar nada: si alguien usara el peso en **libras** y la estatura en **metros**, ¿qué valor obtendría, aproximadamente? Explica por qué. Después compruébalo con R.
+
+b) El preparador concluye: *"La mediana del IMC pasa de 30, así que más de la mitad de nuestros prospectos tiene obesidad."* Calcula la mediana de `BMI`. ¿El número que cita es correcto? ¿La conclusión se sostiene? Piensa qué datos usa la fórmula del IMC y cuáles no usa.
+
+## Parte B. Tu repositorio en GitHub
+
+Los pasos 1 a 10 explican cómo crear tu repositorio, organizarlo y subir tu archivo, ya con la parte A incluida.
 
 ::: {.aviso}
 **Antes de empezar: qué no debe aparecer nunca en tu repositorio.** Contraseñas, tokens o claves de acceso, códigos de verificación, ni datos personales innecesarios (teléfono, domicilio, número de identificación, fecha de nacimiento). Si tu repositorio es público, cualquiera en internet puede leerlo, y lo que subes queda en el historial aunque después lo borres. Si quieres que tu correo no aparezca en los cambios que registras, en GitHub puedes activar *Settings > Emails > Keep my email addresses private*.
@@ -738,7 +655,7 @@ por
 ruta_datos <- "../datos/NFL.csv"
 ```
 
-Los dos puntos `..` significan "la carpeta de arriba". Abre el archivo en RStudio y pulsa **Knit**. Si compila y `file.exists(ruta_datos)` da `TRUE`, la ruta es correcta.
+Los dos puntos `..` significan "la carpeta de arriba". Abre el archivo en RStudio y pulsa **Knit**. Si compila y `file.exists(ruta_datos)` da `TRUE`, la ruta es correcta. Comprueba también que la parte A aparece completa en el HTML.
 
 **8.3 Súbelo.** En GitHub, entra a la carpeta `sesion-1`, abre **Add file > Upload files** y arrastra `sesion1_trabajo.Rmd`. Si quieres, sube también el HTML que generaste con Knit (`sesion1_trabajo.html`). Escribe un mensaje como *Agregar trabajo de la sesión 1*, deja marcada la opción de confirmar en `main` y pulsa **Commit changes**.
 
@@ -748,11 +665,14 @@ Los dos puntos `..` significan "la carpeta de arriba". Abre el archivo en RStudi
 # Sesión 1
 
 1. Lo que quería conseguir:
-2. Archivos y código: sesion1_trabajo.Rmd (importa NFL.csv y lo describe)
-3. Comprobaciones que hice: (¿compiló con la ruta nueva? ¿se abre en GitHub?)
-4. Cambios que conservé o descarté: (por ejemplo, si subiste o no el HTML, y por qué)
-5. Lo que puedo afirmar sobre NFL.csv: (dos o tres frases de tu tabla
-   "lo que sabemos / lo que no sabemos")
+2. Archivos y código: sesion1_trabajo.Rmd (importa NFL.csv, lo describe
+   y, al final, la parte A del IMC)
+3. Comprobaciones que hice: (¿compiló con la ruta nueva? ¿se abre en GitHub?
+   ¿con qué comprobaste el cálculo del IMC?)
+4. Cambios que conservé o descarté: (qué hiciste con la propuesta del
+   preparador y por qué; si subiste o no el HTML)
+5. Lo que puedo afirmar: dos o tres frases sobre NFL.csv (de tu tabla
+   "lo que sabemos / lo que no sabemos") y una sobre el IMC de los prospectos
 ```
 
 Confirma el cambio con un mensaje como *Nota de entrega de la sesión 1*.
@@ -789,6 +709,7 @@ Confirma el cambio con un mensaje como *Nota de entrega de la sesión 1*.
 - [ ] El `README.md` explica qué contiene el repositorio.
 - [ ] Existen `datos/NFL.csv` y las carpetas `sesion-1` a `sesion-5`.
 - [ ] `sesion-1/sesion1_trabajo.Rmd` es mi versión, con mis respuestas, y usa la ruta `"../datos/NFL.csv"`.
+- [ ] La parte A está al final de mi archivo: el cálculo propuesto, mi comprobación, mi evaluación, mi alternativa y las respuestas del seguimiento.
 - [ ] `sesion-1/notas.md` tiene las cinco partes.
 - [ ] Los mensajes de los cambios describen lo que hice.
 - [ ] No hay contraseñas, tokens ni datos personales innecesarios.
@@ -801,19 +722,10 @@ Confirma el cambio con un mensaje como *Nota de entrega de la sesión 1*.
 |----------|---------------|
 | Organización | Nombre correcto, descripción, README útil y estructura de carpetas completa |
 | Archivo de trabajo | `sesion1_trabajo.Rmd` está en `sesion-1/`, se abre, contiene tus respuestas y la ruta relativa es correcta |
+| Parte A | Pones a prueba la propuesta con los datos, explicas si es adecuada y qué consecuencias tiene, calculas una alternativa justificada y respondes el seguimiento razonando, no solo con un número |
 | Trazabilidad | El historial muestra los pasos con mensajes que se entienden |
 | Nota de entrega | Las cinco partes están completas y la parte 5 distingue lo que se sabe de lo que no se sabe sobre los datos |
 | Cuidado | No hay información sensible y el enlace es accesible para el profesor |
 
-No se evalúa la rapidez ni el dominio de Git: solo que el repositorio esté organizado, que se pueda revisar y que tu trabajo de la sesión esté ahí.
+No se evalúa la rapidez ni el dominio de Git: se evalúa que el repositorio esté organizado y se pueda revisar, y que puedas explicar y defender lo que hay en tu archivo.
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Notas para quien imparte la sesión</summary>
-
-- El tropiezo más común en clase es que R no encuentre el archivo: casi siempre es una carpeta mal nombrada o una consola situada en otra carpeta. El bloque `file.exists(ruta_datos)` existe para diagnosticarlo antes de importar. Conviene que los equipos tengan instalado `rmarkdown` antes de la clase.
-- Si el grupo va lento, el Ejercicio 4 puede terminarse en casa: forma parte del archivo que suben en la tarea.
-- La tarea de GitHub está pensada para hacerse solo con el navegador. Si el curso exige repositorios privados, recuerde comunicar su nombre de usuario de GitHub para que puedan invitarle.
-- Las propuestas "de IA" de las cinco sesiones se redactaron para el curso. Son decisiones plausibles (eliminar faltantes, rellenarlos con ceros, interpretar el nombre de una columna, cortar un eje) que producen código que funciona; no son errores artificiales.
-</details>
-```

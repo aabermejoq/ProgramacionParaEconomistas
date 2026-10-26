@@ -10,25 +10,16 @@ output:
     toc_depth: 2
     theme: flatly
     highlight: tango
-params:
-  soluciones: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##")
-
-# Las soluciones y las notas para el profesor se muestran plegadas.
-# Para generar una versión sin ellas:
-# rmarkdown::render("Sesion_3_Transformar_y_resumir.Rmd", params = list(soluciones = FALSE))
-mostrar_sol <- if (exists("params")) isTRUE(params$soluciones) else TRUE
 
 # Ancho de impresión mayor para que las tablas no se corten en el HTML
 options(width = 100)
 ```
 
 ```{css, echo=FALSE}
-details.solucion { border-left: 4px solid #18bc9c; background: #f4faf8; padding: 0.5em 1em; margin: 1em 0; }
-details.solucion summary { cursor: pointer; font-weight: bold; }
 .tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
 .ia { border-left: 4px solid #eb6834; background: #fdf5f1; padding: 0.6em 1em; margin: 1em 0; }
 .aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
@@ -101,20 +92,6 @@ b) ¿Qué número vas a poner en cada celda de la tabla: el promedio de repetici
 c) ¿Qué esperas encontrar? ¿Por cuántas repeticiones de diferencia?
 
 d) Recuerda lo que vimos en la sesión 2 sobre los *quarterbacks* y el press de banca. ¿Qué problema anticipas?
-
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver comentario</summary>
-
-a) Primera ronda, rondas 2 a 7, y no elegidos. No hay una columna con la ronda: la información está dentro del texto de `Drafted..tm.rnd.yr.` ("Arizona Cardinals / 1st / 31st pick / 2009"). Habrá que construirla.
-
-b) Es una decisión, y no la única posible. El promedio es lo más habitual; la mediana es menos sensible a valores extremos. En cualquier caso, conviene acompañar la cifra con el número de jugadores en que se basa.
-
-c) Es razonable esperar que los de primera ronda levanten algo más, pero la diferencia no tiene por qué ser grande: la fuerza es solo una de muchas cosas que miran los equipos.
-
-d) Muchos jugadores no hicieron el press de banca (905 en todo el archivo), y entre los *quarterbacks* casi ninguno. Lo que hagamos con esos faltantes va a influir en la tabla.
-</details>
-```
 
 ---
 
@@ -318,36 +295,6 @@ e) Mira la columna `pct_sin_dato` de la versión A. ¿Qué grupo tiene más falt
 
 ```
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-actividad, eval = mostrar_sol, echo = mostrar_sol}
-table(sin_especialistas$grupo_draft, sin_especialistas$Position == "QB")
-
-# ¿Qué pasa si quitamos a los quarterbacks?
-sin_especialistas %>%
-  filter(Position != "QB") %>%
-  group_by(grupo_draft) %>%
-  summarise(pct_sin_dato = round(100 * mean(is.na(Bench_Press_Reps)), 1),
-            media_reps = mean(Bench_Press_Reps, na.rm = TRUE),
-            promedio_con_ceros = mean(ifelse(is.na(Bench_Press_Reps), 0, Bench_Press_Reps)))
-```
-
-```{asis, echo = mostrar_sol}
-a) Con la versión A, el orden es: primera ronda (22.3 repeticiones), rondas 2 a 7 (20.7) y no elegidos (19.1). Con la versión B: rondas 2 a 7 (16.2), primera ronda (15.2) y no elegidos (14.3). **La primera ronda pasa del primer lugar al segundo.** Si el director solo viera la versión B, concluiría que los elegidos en primera ronda no son los que más levantan.
-
-b) A: el número medio de repeticiones *de los jugadores que hicieron la prueba*. B: el número medio de repeticiones *contando como cero a quienes no la hicieron*. B mezcla dos cosas distintas, repeticiones y participación: un grupo puede bajar en B porque levanta menos o porque más de sus jugadores se saltaron la prueba.
-
-c) Decisiones comunes: excluir a los especialistas; usar las tres categorías de `grupo_draft`. Versión A: ignorar a quienes no hicieron la prueba (`na.rm = TRUE`), pero mostrar cuántos son; añadir la mediana. Versión B: suponer que no hacer la prueba equivale a cero repeticiones; **sobrescribir la columna original** `Bench_Press_Reps` dentro del cálculo, de modo que en esa tabla ya no se distingue un cero real de un dato que faltaba (en este archivo no hay ningún cero real: el mínimo es 2); y no informar cuántos datos faltaban.
-
-d) Cada versión calcula bien lo que su definición dice. Lo que cambia es la definición. Entre A y su propia mediana pasa algo parecido: el promedio y la mediana son dos definiciones razonables de "lo típico" y no tienen por qué coincidir. Pero no todas las definiciones son igual de defendibles para una pregunta dada. Un jugador que no hizo el press de banca no levantó cero veces: no sabemos cuántas habría levantado. Para la pregunta "¿quiénes levantan más?", la definición de B es muy difícil de justificar. Una IA que "arregla" los faltantes no suele preguntarte qué significan; elige una regla y sigue.
-
-e) La primera ronda tiene el mayor porcentaje sin dato (31.9%, frente a 21.8% en rondas 2 a 7). Una parte de la explicación son los *quarterbacks*: son el 10% de la primera ronda (33 de 329), frente al 4% de las rondas 2 a 7, y casi nunca hacen el press de banca. Sin ellos, el porcentaje sin dato de la primera ronda baja a 24.3% y, con ceros, primera ronda y rondas 2 a 7 quedan prácticamente empatadas (16.9 repeticiones cada una). Con la versión A el orden no cambia. Otras posibles razones de los faltantes (lesiones, jugadores muy cotizados que deciden no hacer la prueba) no se pueden comprobar con este archivo.
-</details>
-```
-
 ---
 
 # 5. Ejercicio individual: una variable derivada propuesta por la IA
@@ -383,42 +330,6 @@ e) Escribe una fila de bitácora para esta corrección, con el formato de la sec
 
 ```
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-speed, eval = mostrar_sol, echo = mostrar_sol}
-summary(corredores$speed_score)
-
-corredores <- corredores %>%
-  mutate(speed_score_lb = (peso_lb * 200) / (Sprint_40yd^4))
-
-summary(corredores$speed_score_lb)
-
-# ¿Cambia el orden de los cinco primeros?
-corredores %>% arrange(desc(speed_score)) %>% select(Player, speed_score) %>% head(5)
-corredores %>% arrange(desc(speed_score_lb)) %>% select(Player, speed_score_lb) %>% head(5)
-```
-
-```{asis, echo = mostrar_sol}
-a) Cerca de 100.
-
-b) La mediana sale alrededor de 45. Ningún corredor llega a 60. Si la explicación de la IA fuera cierta, todos los corredores del archivo estarían muy por debajo del promedio, lo cual es imposible.
-
-c) La fórmula del Speed Score se definió con el peso en **libras**, que es como se reporta en la NFL. En este archivo el peso está en kilogramos. La IA usó la columna que se llamaba `Weight` sin preguntar en qué unidades estaba. La fórmula es correcta; los datos que le dimos no son los que la fórmula espera.
-
-d) Con el peso en libras, la mediana queda en 100.06: ahora sí coincide con la referencia. El orden de los corredores no cambia (los cinco primeros son los mismos y en el mismo orden), porque pasar de kilos a libras multiplica todos los valores por la misma constante. Así que:
-
-- para **ordenar** corredores entre sí, las dos versiones sirven igual;
-- para **comparar con la referencia de 100**, con valores publicados o con otro análisis que use la definición estándar, solo sirve la versión en libras.
-
-Y una pregunta que la IA no se planteó: ¿es este el indicador adecuado? Fue pensado para corredores. Si alguien lo aplicara a todas las posiciones, comparar a un liniero de 140 kg con un receptor de 85 kg con la misma fórmula tendría poco sentido. Además, los 14 corredores sin tiempo en 40 yardas quedan con `NA`.
-
-e) Una fila posible: *Qué cambié*: Speed Score con `peso_lb` en lugar de `Weight`. *Por qué*: la fórmula original usa libras. *Cómo lo comprobé*: la mediana pasó de 45.4 a 100.1, como indica la referencia, y revisé que el orden de los cinco primeros no cambiara. *¿Cambió el resultado?*: cambian los valores, no el orden.
-</details>
-```
-
 ::: {.ia}
 **Si tienes acceso a una IA.** Tres peticiones útiles para esta sesión:
 
@@ -440,37 +351,16 @@ Con la versión corregida, construye una tabla del Speed Score por `grupo_draft`
 
 ```
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver solución</summary>
-```
-
-```{r sol-speed-grupos, eval = mostrar_sol, echo = mostrar_sol}
-corredores %>%
-  group_by(grupo_draft) %>%
-  summarise(jugadores = n(),
-            con_dato = sum(!is.na(speed_score_lb)),
-            media = mean(speed_score_lb, na.rm = TRUE),
-            mediana = median(speed_score_lb, na.rm = TRUE))
-```
-
-```{asis, echo = mostrar_sol}
-Lo que muestra: los corredores elegidos en primera ronda tienen un Speed Score mediano de 112, frente a 102 en rondas 2 a 7 y 95 entre los no elegidos.
-
-Lo que no permite afirmar: que el Speed Score *cause* que un corredor sea elegido antes, ni que sea un buen predictor del rendimiento en la NFL (este archivo no tiene datos de rendimiento). Además, la primera ronda tiene solo 19 corredores, 18 con dato: un par de casos extremos podrían mover bastante su media.
-</details>
-```
-
 ---
 
 # 6. La bitácora de cambios
 
-En la sesión 2 escribiste mensajes de cambio para GitHub. Son útiles, pero cortos: dicen *qué* cambió. Hoy viste dos casos (los ceros en el press de banca y los kilos del Speed Score) en los que lo importante era además *por qué* se cambió y *cómo se comprobó*. Eso no cabe en un mensaje de una línea. Para eso sirve una **bitácora**: una sección al final de tu archivo de trabajo, con una fila por cada cambio que afecte a los resultados.
+En la sesión 2 escribiste mensajes de cambio para GitHub. Son útiles, pero cortos: dicen *qué* cambió. Hoy viste varios casos (la definición del grupo del draft, los faltantes del press de banca, la variable propuesta por la IA) en los que lo importante no era solo *qué* se calculó, sino *por qué* se decidió así y *cómo se comprobó*. Eso no cabe en un mensaje de una línea. Para eso sirve una **bitácora**: una sección al final de tu archivo de trabajo, con una fila por cada cambio que afecte a los resultados.
 
 | Fecha | Qué cambié | Por qué | Cómo lo comprobé | ¿Cambió el resultado? |
 |-------|------------|---------|------------------|------------------------|
-| (fecha) | Speed Score con peso en libras | La fórmula original usa libras | La mediana pasó de 45 a 100, como indica la referencia | Cambian los valores, no el orden |
-| (fecha) | Descarté rellenar con 0 los faltantes del press de banca | Un dato que falta no es un cero | Comparé las dos tablas: con ceros, cambia el orden de los grupos | Sí: me quedo con `na.rm = TRUE` y reporto el % sin dato |
+| (fecha) | Excluí a los especialistas (K, P, LS) | No compiten por los mismos puestos y casi ninguno hace las pruebas | Conté cuántos quedaban fuera: 124 | Sí, cambian un poco los promedios; lo menciono al presentar la tabla |
+| (fecha) | Añadí la mediana junto a la media en la tabla de tiempos | Quería saber si unos pocos valores extremos movían el promedio | Comparé las dos columnas grupo por grupo | No: el orden de los grupos es el mismo |
 
 Tres reglas para que sirva:
 
@@ -478,7 +368,7 @@ Tres reglas para que sirva:
 - **También lo que descartas.** Una propuesta (tuya o de una IA) que probaste y rechazaste es una decisión, y quien lea tu trabajo querrá saber por qué.
 - **La comprobación es obligatoria.** "Lo cambié porque estaba mal" no basta; di qué miraste para saberlo.
 
-El mensaje del cambio en GitHub puede ser la versión corta de la fila: *"Speed Score en libras (antes en kg)"*. La bitácora guarda el resto.
+El mensaje del cambio en GitHub puede ser la versión corta de la fila: *"Excluyo especialistas de la tabla de tiempos"*. La bitácora guarda el resto.
 
 ---
 
@@ -487,14 +377,6 @@ El mensaje del cambio en GitHub puede ser la versión corta de la fila: *"Speed 
 El director de scouting no quiere una clase de estadística: quiere saber si los de primera ronda son "más fuertes". Con lo que has visto hoy, escribe tu respuesta en tres o cuatro líneas. Debe decir qué mediste, cómo, sobre quiénes, y qué no sabes.
 
 *Mi respuesta:*
-
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Ver un ejemplo</summary>
-
-"Medí repeticiones en press de banca, no fuerza en general. Entre los jugadores que hicieron la prueba (excluidos los especialistas), los elegidos en primera ronda levantaron en promedio 22.3 repeticiones, frente a 20.7 de las rondas 2 a 7 y 19.1 de los no elegidos; con la mediana el orden es el mismo. Pero el 32% de los de primera ronda no hizo la prueba, más que en los otros grupos, y no sabemos por qué. Si esos jugadores fueran sistemáticamente más fuertes o más débiles, la comparación cambiaría. Una tabla que cuente como cero a quienes no hicieron la prueba da otro orden, pero mide participación, no repeticiones."
-</details>
-```
 
 ## Para cerrar
 
@@ -508,34 +390,71 @@ Un número calculado sin errores todavía tiene que ser el número correcto para
 
 ---
 
-# Tarea 3 (después de clase): un indicador que puedas defender
+# Tarea 3 (después de clase): ¿dónde buscar talento?
 
 ::: {.tarea}
 **Tiempo estimado:** 30–45 minutos.
 
-**Qué haces:** construyes **una variable derivada** (por ejemplo, peso en libras, índice de masa corporal propio, grupo del draft, un Speed Score para otra posición justificado) **o un resumen por grupos** (por ejemplo, una prueba física comparada entre posiciones o entre grupos del draft).
+**Qué haces:** construyes un resumen por grupos con una variable derivada (una tasa por universidad), pones a prueba la forma de ordenarla que propone el director y defiendes tu propia lista.
 
-**Qué entregas:** `sesion3_tarea.Rmd` (y, si quieres, su HTML) en la carpeta `sesion-3/` de tu repositorio, con estas partes: código ejecutable, definición explícita del indicador o estadístico, tabla de resultados, interpretación en lenguaje cotidiano, una comprobación de que el código hace lo que pretendes, una limitación de la medida y una bitácora.
+**Qué entregas:** `sesion3_tarea.Rmd` (y, si quieres, su HTML) en la carpeta `sesion-3/` de tu repositorio, con: código ejecutable, definición explícita del indicador, tabla de resultados, interpretación en lenguaje cotidiano, al menos una comprobación de que el código hace lo que pretendes, una limitación de la medida y una bitácora.
+
+**Qué se valora:** que definas el indicador sin ambigüedad, que compruebes lo que hay detrás de cada cifra y que justifiques tus decisiones. Que el código se ejecute es necesario, pero no suficiente.
 
 **IA:** opcional. Si la usas, registra en la bitácora qué propuesta aceptaste o rechazaste y cómo la comprobaste.
 :::
 
-## Paso 1. Elige qué vas a medir
+## El encargo
 
-Escribe primero, sin código, la pregunta y la definición. Una definición sirve si otra persona podría calcular el mismo número sin preguntarte nada. Compara:
+El director de scouting tiene presupuesto para visitar cinco universidades la próxima temporada:
 
-- Vaga: *"la explosividad de los linebackers"*.
-- Explícita: *"la mediana del salto largo, en centímetros, de los linebackers (`ILB` y `OLB`) que hicieron la prueba, por grupo del draft"*.
+> "Calcula, para cada universidad, su tasa de éxito: jugadores elegidos en el draft entre jugadores de esa universidad en el archivo. Ordena de mayor a menor y dame las cinco primeras. Ahí es donde vamos."
 
-Evita inventar índices que sumen cosas con unidades distintas (centímetros más segundos, por ejemplo). Si quieres combinar medidas, justifica por qué tiene sentido o usa un indicador con una definición publicada y verificable, como el Speed Score para corredores.
+Y propone este código. `desc()` dentro de `arrange()` ordena de mayor a menor:
 
-## Paso 2. Crea tu archivo con esta estructura
+```r
+universidades <- jugadores %>%
+  group_by(School) %>%
+  summarise(jugadores  = n(),
+            elegidos   = sum(Drafted == "Yes"),
+            tasa_exito = elegidos / jugadores)
+
+universidades %>%
+  arrange(desc(tasa_exito)) %>%
+  head(5)
+```
+
+## Lo que tienes que hacer
+
+**1. Anticipa.** Antes de ejecutar, escribe qué universidades crees que van a aparecer arriba y por qué.
+
+**2. Implementa la propuesta tal como está** y copia en tu archivo la tabla de las cinco primeras.
+
+**3. Define el indicador.** Escribe con tus palabras qué es exactamente `tasa_exito`: qué cuenta el numerador, qué cuenta el denominador y a qué jugadores se refiere. ¿Es la proporción de jugadores de esa universidad que llegan a la NFL?
+
+**4. Comprueba lo que hay detrás de la lista.** Con código:
+
+- ¿Cuántos jugadores tienen en el archivo las cinco universidades de la lista?
+- ¿Cuántas universidades tienen una tasa de 1 (100%)? ¿Cuántos jugadores tiene cada una? Pista: puedes aplicar `filter()` y `summary()` a la tabla `universidades`, igual que a `jugadores`.
+- ¿Cuántas universidades tienen una tasa de 0?
+
+**5. Evalúa la propuesta y defiende tu lista.** ¿Ordenar solo por `tasa_exito` responde bien a la pregunta del director? ¿Qué consecuencias tendría visitar las cinco universidades de su lista? Propón y calcula la lista de cinco universidades que tú defenderías, y explica la decisión que tomaste para construirla (por ejemplo, un criterio sobre el número de jugadores, otra forma de ordenar o una combinación). Muestra siempre el número de jugadores de cada universidad.
+
+**6. Seguimiento.** Supón que exiges un mínimo de 20 jugadores en el archivo. **Antes de ejecutar**, predice: ¿seguirá alguna de las cinco universidades de la lista original? ¿Por qué? Después prueba con mínimos de 20 y de 40 jugadores: ¿cambia la universidad que encabeza la lista? Explica por qué ese mínimo es una decisión que tienes que justificar y no un detalle técnico.
+
+**7. Interpretación y limitación.** Escribe, para el director, qué recomiendas y con qué cautela. Incluye una limitación concreta de la tasa como medida.
+
+## La bitácora
+
+Al final de tu archivo, una sección **Bitácora de cambios** (como en la sección 6 de esta sesión) con al menos una fila por decisión importante: qué cambiaste respecto a la propuesta del director, por qué, cómo lo comprobaste y si cambió el resultado. Incluye también lo que probaste y descartaste.
+
+## Crea tu archivo con esta estructura
 
 *File > New File > R Markdown...*, borra el contenido de ejemplo, pega esta plantilla y guárdala como `sesion3_tarea.Rmd` en tu carpeta `curso-programacion-r/sesion-3/`.
 
 ````{verbatim, lang = "markdown"}
 ---
-title: "Tarea 3: un indicador que puedo defender"
+title: "Tarea 3: ¿dónde buscar talento?"
 author: "Tu nombre"
 output: html_document
 ---
@@ -548,32 +467,42 @@ jugadores <- read.csv(ruta_datos)
 
 ## 1. Lo que quería conseguir
 
-Pregunta y definición explícita del indicador o estadístico (qué se calcula, con qué columnas, en qué unidades, sobre qué jugadores):
+La pregunta del director con mis palabras, lo que esperaba encontrar y la definición explícita de la tasa (numerador, denominador, a quiénes se refiere):
 
 ## 2. Código
 
-```{r indicador}
-# Construye aquí tu variable con mutate() o tu resumen con group_by() + summarise().
-# Incluye siempre n() y cuántos jugadores tienen dato.
+```{r propuesta-director}
+universidades <- jugadores %>%
+  group_by(School) %>%
+  summarise(jugadores  = n(),
+            elegidos   = sum(Drafted == "Yes"),
+            tasa_exito = elegidos / jugadores)
+
+universidades %>%
+  arrange(desc(tasa_exito)) %>%
+  head(5)
 ```
 
 ## 3. Comprobaciones
 
 ```{r comprobaciones}
-# Al menos una comprobación de que el código hace lo que pretendes:
-# revisar a mano dos o tres jugadores, comprobar rangos con summary(),
-# contar categorías con table(), repetir un cálculo de otra forma...
+# ¿Cuántos jugadores tienen las universidades de la lista?
+# ¿Cuántas universidades tienen tasa 1 y cuántos jugadores tienen? ¿Y tasa 0?
 ```
 
 Qué comprobé y qué encontré:
 
-## 4. Resultados e interpretación
+## 4. Mi lista y las decisiones que conservé o descarté
 
-La tabla de arriba, explicada en lenguaje cotidiano para alguien que no programa:
+```{r mi-lista}
+# Mi lista de cinco universidades, mostrando cuántos jugadores tiene cada una
+```
 
-## 5. Conclusión que puedo defender y limitación
+Por qué la construí así, y el seguimiento (mínimos de 20 y 40: predicción, resultado y explicación):
 
-Lo que puedo afirmar con estos resultados, y una limitación concreta de la medida elegida:
+## 5. Interpretación, recomendación y limitación
+
+Lo que le diría al director, en lenguaje cotidiano, y una limitación concreta de la tasa:
 
 ## Bitácora de cambios
 
@@ -582,17 +511,10 @@ Lo que puedo afirmar con estos resultados, y una limitación concreta de la medi
 | | | | | |
 ````
 
-## Paso 3. Completa y comprueba
-
-1. Escribe el código y pulsa **Knit** con frecuencia.
-2. Haz al menos **una comprobación** que te dé confianza en el resultado. Si construiste una variable, revisa a mano dos o tres jugadores (`select()` + `head()`) y comprueba que el valor calculado es el que esperarías. Si hiciste un resumen, comprueba que los conteos por grupo suman el total y que los mínimos y máximos son plausibles.
-3. Prueba al menos **una alternativa** razonable (media frente a mediana, incluir o excluir un grupo, otro tratamiento de los faltantes) y regístrala en la bitácora, la conserves o no.
-4. Escribe la interpretación como si se la explicaras al director de scouting, y una limitación concreta: no "hacen falta más datos", sino algo como "el 30% de los jugadores no hizo la prueba y podrían no parecerse a los que sí la hicieron".
-
-## Paso 4. Sube tu trabajo y documenta el cambio
+## Sube tu trabajo y documenta el cambio
 
 1. En tu repositorio, entra a `sesion-3` y usa **Add file > Upload files** para subir `sesion3_tarea.Rmd` (y el HTML, si quieres).
-2. En el mensaje del cambio, resume la fila más importante de tu bitácora, por ejemplo *Tarea 3: mediana del salto largo de LB por grupo del draft*.
+2. En el mensaje del cambio, resume la fila más importante de tu bitácora, por ejemplo *Tarea 3: lista de universidades con criterio propio*.
 3. Si después corriges algo, vuelve a subir el archivo con el mismo nombre, añade la fila correspondiente a la bitácora y usa un mensaje que diga qué cambió.
 4. Comprueba en **History** que la versión visible es la última y que los mensajes se entienden.
 
@@ -600,19 +522,18 @@ Lo que puedo afirmar con estos resultados, y una limitación concreta de la medi
 
 | Lo que pasa | Qué suele significar | Qué hacer |
 |-------------|----------------------|-----------|
-| La tabla sale con `NA` | Faltan datos en algún grupo | Usa `na.rm = TRUE` **y** añade una columna con cuántos tienen dato |
-| La tabla tiene una sola fila | Falta `group_by()` antes de `summarise()` | Agrega el `group_by()` con la columna de los grupos |
+| La tabla tiene una sola fila | Falta `group_by()` antes de `summarise()` | Agrega el `group_by(School)` |
+| `object 'tasa_exito' not found` al filtrar | Estás filtrando `jugadores` en lugar de la tabla resumida | Aplica `filter()` a `universidades`, que es donde está esa columna |
+| `arrange()` ordena de menor a mayor | Falta `desc()` | Usa `arrange(desc(columna))` |
 | `mutate()` "no hizo nada" | No guardaste el resultado | Asigna: `tabla <- tabla %>% mutate(...)` |
-| Desapareció la columna original | Usaste su mismo nombre dentro de `mutate()` | Crea una columna con nombre nuevo |
-| Todos quedan en la misma categoría de `case_when()` | La condición general (`TRUE ~`) está antes que las específicas | Pon `TRUE ~` al final |
 
 ## Lista de comprobación
 
-- [ ] La definición del indicador permitiría a otra persona calcular el mismo número.
-- [ ] La tabla incluye cuántos jugadores hay en cada grupo y cuántos tienen dato.
-- [ ] Hay al menos una comprobación con código y explico qué encontré.
-- [ ] La interpretación se entiende sin saber R.
-- [ ] Hay una limitación concreta de la medida.
+- [ ] La definición de la tasa permitiría a otra persona calcular el mismo número.
+- [ ] Ejecuté la propuesta del director y comprobé qué hay detrás de su lista.
+- [ ] Mi lista muestra el número de jugadores de cada universidad y explico cómo la construí.
+- [ ] Respondí el seguimiento con una predicción **antes** de ejecutar.
+- [ ] La interpretación se entiende sin saber R e incluye una limitación concreta.
 - [ ] La bitácora tiene al menos una fila, con la comprobación incluida.
 - [ ] El archivo compila y está en `sesion-3/` con un mensaje de cambio descriptivo.
 
@@ -620,19 +541,11 @@ Lo que puedo afirmar con estos resultados, y una limitación concreta de la medi
 
 | Criterio | Qué se revisa |
 |----------|---------------|
-| Definición | El indicador o estadístico está definido sin ambigüedad y tiene sentido para la pregunta |
-| Código | Compila y produce la tabla; los faltantes se tratan de forma explícita |
-| Comprobación | Hay al menos una verificación real, no solo "lo ejecuté y funcionó" |
-| Interpretación y limitación | Explicación en lenguaje cotidiano, sin exagerar, con una limitación concreta |
+| Definición | El indicador está definido sin ambigüedad: numerador, denominador y población |
+| Comprobación | Hay verificaciones reales de lo que hay detrás de las cifras, no solo "lo ejecuté y funcionó" |
+| Decisión y alternativa | Evalúas la propuesta con datos, explicas sus consecuencias y justificas tu lista |
+| Seguimiento | Tu predicción y tu explicación muestran que entiendes por qué cambia (o no) la lista |
+| Interpretación y limitación | Recomendación en lenguaje cotidiano, sin exagerar, con una limitación concreta |
 | Bitácora y repositorio | Los cambios relevantes están registrados con su motivo y su comprobación; el archivo está en `sesion-3/` |
 
-```{asis, echo = mostrar_sol}
-<details class="solucion">
-<summary>Notas para quien imparte la sesión</summary>
-
-- El tramo de 25 a 45 minutos es el más denso (`grepl()`, `case_when()` y dos comprobaciones). Si el grupo va lento, la tabla por tipo de posición puede mostrarse sin que la escriban.
-- El orden de las condiciones en `case_when()` y la diferencia entre "no hizo la prueba" y "levantó cero veces" son los dos puntos que más discusión generan. Merece la pena detenerse en ellos.
-- El Ejercicio 3 es opcional. La sección 6 (bitácora) no debe saltarse: la tarea depende de ella.
-- En la tarea, conviene revisar que nadie sume medidas con unidades distintas para construir un "índice de talento": la consigna lo desaconseja explícitamente.
-</details>
-```
+Hay varias listas defendibles. Se evalúa que la tuya esté comprobada y justificada, no que coincida con una lista única.
