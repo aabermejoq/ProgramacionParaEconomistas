@@ -70,10 +70,11 @@ Lo harás programando en R, con ayuda de la IA si quieres, pero con una regla qu
 :::
 ::::
 
-La gráfica muestra a los jugadores elegidos entre 2000 y 2014: su tiempo en la carrera de 40 yardas y el valor que acumularon en su carrera profesional. ¿Ves algún patrón? Al ojo, casi nada. Al final de la sesión 2 sabrás que esta nube esconde una relación, y al final del curso, cuánto se puede pronosticar con estos datos y qué no.
+Esta es la gráfica con la que vas a terminar el curso. Cada punto es un jugador elegido entre 2011 y 2014 que el modelo **nunca vio**: en el eje horizontal, el valor de carrera que le **pronosticó** el modelo con la información del draft; en el vertical, el que **realmente** acumuló. Si el pronóstico fuera perfecto, todos los puntos caerían sobre la línea discontinua.
 
-```{r vista-previa, echo=FALSE, fig.width=9, fig.height=5}
-# Vista previa del curso. Hoy no necesitas entender este código.
+```{r vista-previa, echo=FALSE, fig.width=10, fig.height=5.6}
+# Vista previa del curso: el pronóstico del valor de carrera que construirás en la sesión 5.
+# Hoy no necesitas entender este código.
 url_vista <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
                     "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
 vista <- tryCatch(read.csv(url_vista, sep = ";", na.strings = ""),
@@ -83,37 +84,58 @@ if (is.null(vista) && file.exists("datos/nfl_data.csv")) {
 }
 
 if (!is.null(vista)) {
+  # Misma limpieza y misma muestra que en las sesiones 1 y 4
   repetidos <- vista$tag[duplicated(vista$tag)]
   vista <- vista[vista$drafted == "True" & vista$year >= 2000 & vista$year <= 2014 &
                  vista$simple_pos != "ST" & !(vista$tag %in% repetidos) &
-                 !is.na(vista$X40_yard), ]
+                 !is.na(vista$X40_yard) & !is.na(vista$vert_leap) & !is.na(vista$broad_jump), ]
   vista$career_av[is.na(vista$career_av)] <- 0
-  marcados <- vista[vista$name %in% c("Tom Brady", "Russell Wilson", "Giovanni Carmazzi"), ]
+  ent <- vista[vista$year <= 2010, ]   # el modelo aprende con los drafts 2000-2010
+  pru <- vista[vista$year >= 2011, ]   # y pronostica los drafts 2011-2014
 
-  par(mar = c(4.5, 4.5, 4, 1), las = 1, bty = "l",
+  antes   <- lm(career_av ~ simple_pos + height + weight + X40_yard + vert_leap + broad_jump, data = ent)
+  despues <- lm(career_av ~ simple_pos + log(draft_pick), data = ent)
+  paneles <- list(
+    list(pred = predict(antes, pru), titulo = "Antes del draft: posición y pruebas del Combine",
+         nombres = c("Russell Wilson", "Richard Sherman", "Aaron Donald")),
+    list(pred = predict(despues, pru), titulo = "Después del draft: posición y número de selección",
+         nombres = c("Russell Wilson", "Richard Sherman", "Aaron Donald", "Dion Jordan"))
+  )
+
+  par(mfrow = c(1, 2), mar = c(4.5, 4.5, 2.5, 1), oma = c(0, 0, 3.5, 0), las = 1, bty = "l",
       col.axis = "#52514e", col.lab = "#52514e", fg = "#898781")
-  plot(vista$X40_yard, vista$career_av, type = "n",
-       xlab = "Tiempo en 40 yardas (segundos)", ylab = "Valor de carrera (career_av)")
-  grid(col = "#e6e5e0", lty = 1)
-  points(vista$X40_yard, vista$career_av, pch = 19, cex = 0.7,
-         col = adjustcolor("#2a78d6", alpha.f = 0.35))
-  points(marcados$X40_yard, marcados$career_av, pch = 21, bg = "#eb6834",
-         col = "white", cex = 1.9, lwd = 1.5)
-  text(marcados$X40_yard, marcados$career_av, cex = 0.85,
-       pos = ifelse(marcados$name == "Tom Brady", 2, 4),
-       paste0(marcados$name, " (pick ", marcados$draft_pick, ")"))
-  title(main = "¿Ves un patrón? Velocidad y valor de carrera de los jugadores elegidos",
-        adj = 0, font.main = 1, cex.main = 1.15, line = 2.2)
-  mtext(paste(format(nrow(vista), big.mark = ","),
-              "jugadores elegidos entre 2000 y 2014 con tiempo registrado"),
-        side = 3, line = 0.8, adj = 0, cex = 0.85, col = "#52514e")
+  for (p in paneles) {
+    plot(p$pred, pru$career_av, type = "n", asp = 1, xlim = c(-5, 145), ylim = c(-5, 145),
+         xlab = "Valor de carrera pronosticado", ylab = "Valor de carrera observado")
+    grid(col = "#e6e5e0", lty = 1)
+    abline(0, 1, lty = 2, col = "#52514e")
+    points(p$pred, pru$career_av, pch = 19, cex = 0.7, col = adjustcolor("#2a78d6", alpha.f = 0.35))
+    marca <- pru$name %in% p$nombres
+    points(p$pred[marca], pru$career_av[marca], pch = 21, bg = "#eb6834", col = "white", cex = 1.8, lwd = 1.5)
+    text(p$pred[marca], pru$career_av[marca], pru$name[marca], pos = 4, cex = 0.8, col = "#0b0b0b")
+    error <- mean(abs(pru$career_av - p$pred))
+    title(main = p$titulo, adj = 0, font.main = 1, cex.main = 0.95, line = 1.2, col.main = "#0b0b0b")
+    mtext(paste("Error medio:", round(error, 1), "puntos"), side = 3, line = 0.1, adj = 0,
+          cex = 0.8, col = "#52514e")
+  }
+  mtext("¿Se puede pronosticar el éxito en la NFL? Lo pronosticado frente a lo que pasó",
+        outer = TRUE, side = 3, line = 1.6, adj = 0, cex = 1.15, col = "#0b0b0b")
+  mtext(paste(nrow(pru), "jugadores elegidos entre 2011 y 2014, que el modelo no usó para aprender.",
+              "Línea discontinua: pronóstico perfecto."),
+        outer = TRUE, side = 3, line = 0.3, adj = 0, cex = 0.85, col = "#52514e")
 } else {
   plot.new()
   text(0.5, 0.5, "Sin conexión: la gráfica aparecerá cuando R pueda leer los datos (sección 2).")
 }
 ```
 
-*El código de esta gráfica está en el `.Rmd`, en el bloque `vista-previa`. Hoy no hace falta entenderlo.*
+Tres cosas que vas a poder explicar al final del curso:
+
+- **¿Por qué los pronósticos de la izquierda se amontonan en una franja estrecha**, mientras que los de la derecha se abren mucho más? ¿Qué sabe el modelo de la derecha que el de la izquierda no sabe?
+- **¿Por qué Russell Wilson y Richard Sherman quedan tan por encima de la línea** en los dos paneles? Ningún equipo los vio venir: fueron elegidos en los puestos 75 y 154.
+- **¿Sirve de algo un pronóstico que se equivoca, en promedio, por más de 14 puntos?** Spoiler: depende de para qué lo uses.
+
+*El código de esta gráfica está en el `.Rmd`, en el bloque `vista-previa`. Hoy no hace falta entenderlo; en la sesión 5 lo escribirás tú.*
 
 ---
 
