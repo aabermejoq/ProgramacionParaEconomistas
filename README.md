@@ -19,6 +19,6 @@ El curso no es exhaustivo, pero sí suficiente para empezar a ser autónomo.
 
 ## Curso complementario: Programar con criterio en la era de la IA
 
-Cinco sesiones de 90 minutos en R Markdown, para personas que nunca han programado, sobre por qué sigue siendo necesario aprender a programar cuando una IA puede escribir el código: leerlo, detectar sus decisiones, comprobar resultados y responsabilizarse de lo que se presenta. El caso de trabajo son los datos del NFL Scouting Combine (2009-2019). Materiales, datos e instrucciones en [`Curso_Programar_con_IA_NFL/`](Curso_Programar_con_IA_NFL/README.md).
+Cinco sesiones de 90 minutos en R Markdown, para personas que nunca han programado, sobre por qué sigue siendo necesario aprender a programar cuando una IA puede escribir el código: leerlo, detectar sus decisiones, comprobar resultados y responsabilizarse de lo que se presenta. El caso de trabajo son los datos del NFL Scouting Combine (2009-2019). Los cinco R Markdown, con todas las instrucciones, y los datos están en [`Curso_Programar_con_IA_NFL/`](Curso_Programar_con_IA_NFL/).
 
 Correo : "aabermejo@tec.mx"

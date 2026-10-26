@@ -1,12 +1,13 @@
 ---
 title: "Sesión 3. Un resultado depende de cómo lo construimos"
-subtitle: "¿Qué estamos midiendo cuando comparamos a dos grupos de jugadores?"
+subtitle: "¿Qué estamos midiendo cuando comparamos grupos de jugadores?"
 author: "Programar con criterio en la era de la IA · Caso: NFL Scouting Combine"
 date: "`r Sys.Date()`"
 output:
   html_document:
     toc: true
     toc_float: true
+    toc_depth: 2
     theme: flatly
     highlight: tango
 params:
@@ -16,7 +17,8 @@ params:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##")
 
-# Las soluciones se muestran plegadas. Para generar una versión sin soluciones:
+# Las soluciones y las notas para el profesor se muestran plegadas.
+# Para generar una versión sin ellas:
 # rmarkdown::render("Sesion_3_Transformar_y_resumir.Rmd", params = list(soluciones = FALSE))
 mostrar_sol <- if (exists("params")) isTRUE(params$soluciones) else TRUE
 
@@ -27,11 +29,18 @@ options(width = 100)
 ```{css, echo=FALSE}
 details.solucion { border-left: 4px solid #18bc9c; background: #f4faf8; padding: 0.5em 1em; margin: 1em 0; }
 details.solucion summary { cursor: pointer; font-weight: bold; }
+.tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
+.ia { border-left: 4px solid #eb6834; background: #fdf5f1; padding: 0.6em 1em; margin: 1em 0; }
+.aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
 ```
 
 # Antes de empezar
 
-Como en las sesiones anteriores, este archivo es independiente: carga sus propios datos y crea todo lo que usa. Necesitas la carpeta `datos/` con `NFL.csv` junto a este `.Rmd` y el paquete `dplyr` (si no lo tienes: `install.packages("dplyr")` en la consola, una sola vez).
+Como en las sesiones anteriores, este archivo es independiente: carga sus propios datos y crea todo lo que usa. Necesitas `NFL.csv` y el paquete `dplyr` (si no lo tienes: `install.packages("dplyr")` en la consola, una sola vez).
+
+**Los datos.** `NFL.csv` proviene del conjunto *NFL Combine - Performance Data (2009 - 2019)* de Kaggle (<https://www.kaggle.com/datasets/redlineracer/nfl-combine-performance-data-2009-2019>, licencia CC0), con datos de Pro Football Reference. La sesión 1 explica cómo descargarlo y qué contiene cada columna.
+
+**Tu archivo de trabajo.** Guarda una copia de este documento como `sesion3_trabajo.Rmd`, junto a este archivo o en la carpeta `sesion-3/` de tu repositorio.
 
 ```{r preparacion}
 if (!requireNamespace("dplyr", quietly = TRUE)) {
@@ -39,9 +48,10 @@ if (!requireNamespace("dplyr", quietly = TRUE)) {
 }
 library(dplyr)
 
-ruta_datos <- "datos/NFL.csv"
+# Busca NFL.csv en datos/ (carpeta del curso) o en ../datos/ (dentro de sesion-3/ en tu repositorio)
+ruta_datos <- if (file.exists("datos/NFL.csv")) "datos/NFL.csv" else "../datos/NFL.csv"
 if (!file.exists(ruta_datos)) {
-  stop("No encuentro ", ruta_datos, ". La carpeta 'datos' debe estar junto a este .Rmd (ver README).")
+  stop("No encuentro NFL.csv ni en datos/ ni en ../datos/. Revisa dónde está la carpeta 'datos'.")
 }
 jugadores <- read.csv(ruta_datos)
 
@@ -50,16 +60,27 @@ if (nrow(jugadores) != 3477 || ncol(jugadores) != 18) {
 }
 ```
 
-**Organización de la sesión (90 minutos)**
+## Qué vas a poder hacer al terminar
+
+1. Crear columnas nuevas con `mutate()` a partir de operaciones aritméticas y de condiciones, sin destruir los datos originales.
+2. Distinguir un cálculo por jugador (una columna nueva) de un resumen por grupo (una tabla con una fila por grupo).
+3. Resumir grupos con `group_by()` y `summarise()`: conteos, medias, medianas, mínimos y máximos, contando siempre cuántos datos hay detrás.
+4. Comprobar que una variable derivada dice lo que crees antes de usarla.
+5. Explicar por qué dos indicadores calculados sin errores pueden dar conclusiones distintas, y cuál es defendible para una pregunta dada.
+6. Registrar un cambio en una bitácora: qué cambió, por qué, cómo se comprobó y qué efecto tuvo.
+
+## Organización de la sesión (90 minutos)
 
 | Minutos | Qué hacemos |
 |---------|-------------|
-| 0–10 | El encargo: ¿son más fuertes los elegidos en primera ronda? |
-| 10–25 | Crear variables con `mutate()`; resumir por grupos con `group_by()` y `summarise()` |
+| 0–10 | El encargo: ¿levantan más los elegidos en primera ronda? |
+| 10–25 | `mutate()`; cálculo por jugador frente a resumen por grupo; `group_by()` y `summarise()` |
 | 25–45 | Ejemplo guiado: construir y comprobar la variable "grupo del draft" |
-| 45–65 | Actividad central: dos indicadores de fuerza que no dicen lo mismo |
+| 45–65 | Actividad central: dos indicadores que no dicen lo mismo |
 | 65–80 | Ejercicio individual: revisar una variable derivada propuesta por una IA |
-| 80–90 | Qué necesitamos saber antes de recomendar algo; cierre |
+| 80–90 | La bitácora de cambios; qué necesitamos saber antes de recomendar algo |
+
+Después de clase: **Tarea 3**, tu propio indicador o resumen por grupos, con su bitácora (30–45 minutos).
 
 ---
 
@@ -69,7 +90,7 @@ El director de scouting quiere una tabla para la reunión de la semana:
 
 > "Compárame la fuerza de los jugadores elegidos en primera ronda con la de los elegidos en las demás rondas y con la de los que no fueron elegidos. Usa el press de banca."
 
-En el Combine, el press de banca consiste en levantar 225 libras (unos 102 kg) tantas veces como se pueda. La columna `Bench_Press_Reps` guarda el número de repeticiones.
+En el Combine, el press de banca consiste en levantar 225 libras (unos 102 kg) tantas veces como se pueda. La columna `Bench_Press_Reps` guarda el número de repeticiones. Conviene tener claro qué mide y qué no: mide cuántas veces se levanta un peso fijo, una forma concreta de resistencia muscular del tren superior. No es "la fuerza" de un jugador en general, y mucho menos su calidad como jugador. Cuando el director dice "fuerza", nosotros vamos a medir repeticiones; la diferencia hay que mantenerla a la vista.
 
 ## Ejercicio 1. Antes de calcular
 
@@ -115,13 +136,18 @@ jugadores %>%
 
 Si te preguntas por qué sale 234.9997 y no 235: 2.20462 es una aproximación del factor de conversión. Que el resultado quede tan cerca de un entero sugiere que el peso se midió originalmente en libras enteras y alguien lo convirtió a kilos al armar el archivo, igual que vimos con la estatura en la sesión 1.
 
-Dos detalles importantes. Primero, `mutate()` no modifica nada si no guardas el resultado; aquí lo guardamos de nuevo en `jugadores`. Segundo, creamos columnas **con nombres nuevos** en vez de sobrescribir `Weight`: así el dato original sigue disponible para comprobar cualquier cálculo.
+Dos detalles importantes. Primero, `mutate()` no modifica nada si no guardas el resultado; aquí lo guardamos de nuevo en `jugadores`. Segundo, creamos columnas **con nombres nuevos** en vez de sobrescribir `Weight`. `mutate()` también puede **modificar** una columna existente si usas su nombre (por ejemplo, `mutate(Weight = Weight * 2.20462)`), pero entonces el dato original desaparece de la tabla y ya no puedes comparar el antes y el después. Guarda esta idea: en la actividad central aparecerá un código que hace justamente eso.
 
-## `group_by()` y `summarise()`: una fila por grupo
+## Un cálculo por jugador o un resumen por grupo
 
-`summarise()` reduce muchas filas a una sola con los resúmenes que le pidas. Si antes le dices `group_by()`, hace lo mismo **para cada grupo por separado**:
+Hay dos tipos de cálculo que conviene no confundir:
+
+- **Por jugador**: `mutate()` produce **un valor para cada fila**. La tabla sigue teniendo 3,477 filas; solo gana una columna. `peso_lb` es un cálculo por jugador.
+- **Por grupo**: `summarise()` reduce muchas filas a **una fila por grupo**. El resultado es otra tabla, mucho más pequeña, en la que ya no aparecen jugadores individuales.
 
 ```{r}
+nrow(jugadores)   # la tabla con la columna nueva sigue teniendo una fila por jugador
+
 jugadores %>%
   group_by(Drafted) %>%
   summarise(jugadores = n(),
@@ -131,7 +157,7 @@ jugadores %>%
             peso_max_lb = max(peso_lb))
 ```
 
-`n()` cuenta las filas de cada grupo. Las demás funciones ya las conoces.
+`group_by()` le dice a `summarise()` que haga el resumen **para cada grupo por separado**; sin él, obtendrías una sola fila para todo el archivo. `n()` cuenta las filas de cada grupo. Las demás funciones ya las conoces. Si te preguntan "¿cuánto pesa Beanie Wells?", la respuesta está en la tabla por jugador; si te preguntan "¿cuánto pesan los elegidos?", necesitas un resumen, y tienes que decidir cuál (media, mediana...).
 
 ## Los faltantes dentro de un resumen
 
@@ -243,41 +269,41 @@ Dentro de cada tipo de posición se mantiene el mismo orden: primera ronda, lueg
 
 ---
 
-# 4. Actividad central: dos indicadores de fuerza
+# 4. Actividad central: dos indicadores que no dicen lo mismo
 
-Volvamos al encargo del director. Estas son dos maneras de construir la tabla.
+Volvamos al encargo del director. Estas son dos maneras de construir la tabla de press de banca.
 
 ## Versión A
 
 ```{r}
-fuerza_a <- sin_especialistas %>%
+banca_a <- sin_especialistas %>%
   group_by(grupo_draft) %>%
   summarise(jugadores = n(),
             con_dato = sum(!is.na(Bench_Press_Reps)),
             pct_sin_dato = round(100 * mean(is.na(Bench_Press_Reps)), 1),
             media_reps = mean(Bench_Press_Reps, na.rm = TRUE),
             mediana_reps = median(Bench_Press_Reps, na.rm = TRUE))
-fuerza_a
+banca_a
 ```
 
 ## Versión B: la propuesta de un asistente de IA
 
-A un asistente de IA le pedimos: *"Haz una tabla en R que compare las repeticiones en press de banca entre los grupos del draft. Hay valores faltantes; arréglalos para que no den problemas."* Esta es una respuesta típica, que dejamos fija para que todos trabajen con el mismo material:
+A un asistente de IA le pedimos: *"Haz una tabla en R que compare las repeticiones en press de banca entre los grupos del draft. Hay valores faltantes; arréglalos para que no den problemas."* Esta es una respuesta típica, redactada para el curso y fijada en el documento para que todos trabajen con el mismo material:
 
 ```{r}
 # Reemplazar los valores faltantes por 0 para poder calcular los promedios
-fuerza_b <- sin_especialistas %>%
+banca_b <- sin_especialistas %>%
   mutate(Bench_Press_Reps = ifelse(is.na(Bench_Press_Reps), 0, Bench_Press_Reps)) %>%
   group_by(grupo_draft) %>%
   summarise(promedio_reps = mean(Bench_Press_Reps))
-fuerza_b
+banca_b
 ```
 
 `ifelse(condición, valor_si_TRUE, valor_si_FALSE)` va fila por fila: si falta el dato, pone 0; si no, deja el que había.
 
-## Tu tarea (en parejas, unos 15 minutos)
+## Lo que tienes que explicar (en parejas, unos 15 minutos)
 
-a) Según la versión A, ¿qué grupo es el más fuerte? ¿Y según la B?
+a) Según la versión A, ¿qué grupo levanta más repeticiones? ¿Y según la B?
 
 b) Explica con palabras **qué mide** cada indicador. Completa: "El promedio de la versión A es el número medio de repeticiones de ...". "El de la versión B es ...".
 
@@ -310,13 +336,13 @@ sin_especialistas %>%
 ```
 
 ```{asis, echo = mostrar_sol}
-a) Con la versión A, el orden es: primera ronda (22.3 repeticiones), rondas 2 a 7 (20.7) y no elegidos (19.1). Con la versión B: rondas 2 a 7 (16.2), primera ronda (15.2) y no elegidos (14.3). **La primera ronda pasa del primer lugar al segundo.** Si el director solo viera la versión B, concluiría que los elegidos en primera ronda no son los más fuertes.
+a) Con la versión A, el orden es: primera ronda (22.3 repeticiones), rondas 2 a 7 (20.7) y no elegidos (19.1). Con la versión B: rondas 2 a 7 (16.2), primera ronda (15.2) y no elegidos (14.3). **La primera ronda pasa del primer lugar al segundo.** Si el director solo viera la versión B, concluiría que los elegidos en primera ronda no son los que más levantan.
 
-b) A: el número medio de repeticiones *de los jugadores que hicieron la prueba*. B: el número medio de repeticiones *contando como cero a quienes no la hicieron*. B mezcla dos cosas distintas, fuerza y participación: un grupo puede bajar en B porque levanta menos o porque más de sus jugadores se saltaron la prueba.
+b) A: el número medio de repeticiones *de los jugadores que hicieron la prueba*. B: el número medio de repeticiones *contando como cero a quienes no la hicieron*. B mezcla dos cosas distintas, repeticiones y participación: un grupo puede bajar en B porque levanta menos o porque más de sus jugadores se saltaron la prueba.
 
 c) Decisiones comunes: excluir a los especialistas; usar las tres categorías de `grupo_draft`. Versión A: ignorar a quienes no hicieron la prueba (`na.rm = TRUE`), pero mostrar cuántos son; añadir la mediana. Versión B: suponer que no hacer la prueba equivale a cero repeticiones; **sobrescribir la columna original** `Bench_Press_Reps` dentro del cálculo, de modo que en esa tabla ya no se distingue un cero real de un dato que faltaba (en este archivo no hay ningún cero real: el mínimo es 2); y no informar cuántos datos faltaban.
 
-d) Cada versión calcula bien lo que su definición dice. Lo que cambia es la definición. Entre A y su propia mediana pasa algo parecido: el promedio y la mediana son dos definiciones razonables de "lo típico" y no tienen por qué coincidir. Pero no todas las definiciones son igual de defendibles para una pregunta dada. Un jugador que no hizo el press de banca no levantó cero veces: no sabemos cuántas habría levantado. Para la pregunta "¿quiénes son más fuertes?", la definición de B es muy difícil de justificar. Una IA que "arregla" los faltantes no suele preguntarte qué significan; elige una regla y sigue.
+d) Cada versión calcula bien lo que su definición dice. Lo que cambia es la definición. Entre A y su propia mediana pasa algo parecido: el promedio y la mediana son dos definiciones razonables de "lo típico" y no tienen por qué coincidir. Pero no todas las definiciones son igual de defendibles para una pregunta dada. Un jugador que no hizo el press de banca no levantó cero veces: no sabemos cuántas habría levantado. Para la pregunta "¿quiénes levantan más?", la definición de B es muy difícil de justificar. Una IA que "arregla" los faltantes no suele preguntarte qué significan; elige una regla y sigue.
 
 e) La primera ronda tiene el mayor porcentaje sin dato (31.9%, frente a 21.8% en rondas 2 a 7). Una parte de la explicación son los *quarterbacks*: son el 10% de la primera ronda (33 de 329), frente al 4% de las rondas 2 a 7, y casi nunca hacen el press de banca. Sin ellos, el porcentaje sin dato de la primera ronda baja a 24.3% y, con ceros, primera ronda y rondas 2 a 7 quedan prácticamente empatadas (16.9 repeticiones cada una). Con la versión A el orden no cambia. Otras posibles razones de los faltantes (lesiones, jugadores muy cotizados que deciden no hacer la prueba) no se pueden comprobar con este archivo.
 </details>
@@ -326,11 +352,9 @@ e) La primera ronda tiene el mayor porcentaje sin dato (31.9%, frente a 21.8% en
 
 # 5. Ejercicio individual: una variable derivada propuesta por la IA
 
-Guarda una copia de este archivo como `Sesion_3_v1.Rmd` antes de empezar.
-
 ## El contexto
 
-Para un corredor (`RB`), el cuerpo técnico sabe que la velocidad no basta: no es lo mismo correr en 4.45 segundos pesando 85 kg que pesando 105. Le pedimos a un asistente de IA: *"Crea en R una variable que mida la velocidad ajustada por peso de los corredores de la tabla `jugadores`."* Respuesta típica:
+Para un corredor (`RB`), el cuerpo técnico sabe que la velocidad no basta: no es lo mismo correr en 4.45 segundos pesando 85 kg que pesando 105. Le pedimos a un asistente de IA: *"Crea en R una variable que mida la velocidad ajustada por peso de los corredores de la tabla `jugadores`."* Respuesta típica (redactada para el curso):
 
 ```{r}
 corredores <- jugadores %>%
@@ -339,6 +363,8 @@ corredores <- jugadores %>%
 ```
 
 > *"He creado el Speed Score, un indicador conocido en el análisis de fútbol americano propuesto por Bill Barnwell. Combina el peso y el tiempo en 40 yardas: un valor cercano a 100 corresponde a un corredor promedio."*
+
+Un indicador derivado es una definición, no un descubrimiento. El Speed Score tiene una justificación concreta y limitada: describe la velocidad de un corredor teniendo en cuenta su peso. No mide el talento ni predice por sí solo el rendimiento en la NFL; este archivo, de hecho, no contiene ningún dato de rendimiento con el que comprobarlo.
 
 ## Ejercicio 2. Comprobar la variable
 
@@ -350,7 +376,7 @@ c) Busca la causa de la discrepancia. Pista: ¿en qué unidades está `Weight` e
 
 d) Corrige la variable. ¿Cambia el **orden** de los cinco corredores con mayor Speed Score? ¿Para qué usos importa la corrección y para cuáles no?
 
-e) Anota el cambio en la bitácora del final.
+e) Escribe una fila de bitácora para esta corrección, con el formato de la sección 6.
 
 ```{r}
 # Tu código
@@ -389,19 +415,21 @@ d) Con el peso en libras, la mediana queda en 100.06: ahora sí coincide con la 
 
 Y una pregunta que la IA no se planteó: ¿es este el indicador adecuado? Fue pensado para corredores. Si alguien lo aplicara a todas las posiciones, comparar a un liniero de 140 kg con un receptor de 85 kg con la misma fórmula tendría poco sentido. Además, los 14 corredores sin tiempo en 40 yardas quedan con `NA`.
 
-Fila de bitácora posible: "v2 · Speed Score calculado con `peso_lb` en lugar de `Weight` · La fórmula original usa libras; con kilos, la mediana salía en 45 en lugar de cerca de 100 · El orden de los corredores no cambia; los valores sí (mediana de 45.4 a 100.1)".
+e) Una fila posible: *Qué cambié*: Speed Score con `peso_lb` en lugar de `Weight`. *Por qué*: la fórmula original usa libras. *Cómo lo comprobé*: la mediana pasó de 45.4 a 100.1, como indica la referencia, y revisé que el orden de los cinco primeros no cambiara. *¿Cambió el resultado?*: cambian los valores, no el orden.
 </details>
 ```
 
-## Si tienes acceso a una IA
+::: {.ia}
+**Si tienes acceso a una IA.** Tres peticiones útiles para esta sesión:
 
-Dos peticiones útiles para esta sesión:
+> "¿Qué supuestos hace este código sobre los datos (unidades, valores faltantes, a quiénes incluye)? [pega el código del Speed Score]"
 
-> "Ayúdame a verificar que este código calcula lo que pretendo: [pega el código del Speed Score]. ¿En qué unidades espera la fórmula el peso? Sugiere comprobaciones concretas."
+> "Ayúdame a verificar que este código calcula lo que pretendo. Sugiere comprobaciones concretas que pueda ejecutar en R."
 
 > "Propón otra forma de tratar los valores faltantes en esta tabla de press de banca y explica en qué condiciones las dos soluciones darían resultados distintos."
 
-Contrasta lo que te diga con lo que ya comprobaste aquí. Si la respuesta dice que algo "no cambia el resultado", compruébalo ejecutando las dos versiones. Sin IA, los ejercicios anteriores cubren lo mismo.
+Contrasta lo que te diga con lo que ya comprobaste aquí. Si la respuesta dice que algo "no cambia el resultado", compruébalo ejecutando las dos versiones. **Sin IA**, los ejercicios anteriores cubren lo mismo.
+:::
 
 ## Ejercicio 3 (si te sobra tiempo). Comparar grupos con la nueva variable
 
@@ -433,18 +461,30 @@ Lo que no permite afirmar: que el Speed Score *cause* que un corredor sea elegid
 </details>
 ```
 
-**Bitácora de cambios**
+---
 
-| Versión | Qué cambié | Por qué | ¿Cambió el resultado? |
-|---------|------------|---------|------------------------|
-| v1 | Versión original | — | — |
-| v2 | | | |
+# 6. La bitácora de cambios
+
+En la sesión 2 escribiste mensajes de cambio para GitHub. Son útiles, pero cortos: dicen *qué* cambió. Hoy viste dos casos (los ceros en el press de banca y los kilos del Speed Score) en los que lo importante era además *por qué* se cambió y *cómo se comprobó*. Eso no cabe en un mensaje de una línea. Para eso sirve una **bitácora**: una sección al final de tu archivo de trabajo, con una fila por cada cambio que afecte a los resultados.
+
+| Fecha | Qué cambié | Por qué | Cómo lo comprobé | ¿Cambió el resultado? |
+|-------|------------|---------|------------------|------------------------|
+| (fecha) | Speed Score con peso en libras | La fórmula original usa libras | La mediana pasó de 45 a 100, como indica la referencia | Cambian los valores, no el orden |
+| (fecha) | Descarté rellenar con 0 los faltantes del press de banca | Un dato que falta no es un cero | Comparé las dos tablas: con ceros, cambia el orden de los grupos | Sí: me quedo con `na.rm = TRUE` y reporto el % sin dato |
+
+Tres reglas para que sirva:
+
+- **Una fila por cambio que importe.** Corregir una errata no necesita fila; cambiar un filtro, una fórmula o el tratamiento de los faltantes, sí.
+- **También lo que descartas.** Una propuesta (tuya o de una IA) que probaste y rechazaste es una decisión, y quien lea tu trabajo querrá saber por qué.
+- **La comprobación es obligatoria.** "Lo cambié porque estaba mal" no basta; di qué miraste para saberlo.
+
+El mensaje del cambio en GitHub puede ser la versión corta de la fila: *"Speed Score en libras (antes en kg)"*. La bitácora guarda el resto.
 
 ---
 
-# 6. Antes de recomendar
+# 7. Antes de recomendar
 
-El director de scouting no quiere una clase de estadística: quiere saber si los de primera ronda son más fuertes. Con lo que has visto hoy, escribe tu respuesta en tres o cuatro líneas. Debe decir qué mediste, cómo, sobre quiénes, y qué no sabes.
+El director de scouting no quiere una clase de estadística: quiere saber si los de primera ronda son "más fuertes". Con lo que has visto hoy, escribe tu respuesta en tres o cuatro líneas. Debe decir qué mediste, cómo, sobre quiénes, y qué no sabes.
 
 *Mi respuesta:*
 
@@ -452,7 +492,7 @@ El director de scouting no quiere una clase de estadística: quiere saber si los
 <details class="solucion">
 <summary>Ver un ejemplo</summary>
 
-"Entre los jugadores que hicieron el press de banca (excluidos los especialistas), los elegidos en primera ronda levantaron en promedio 22.3 repeticiones, frente a 20.7 de las rondas 2 a 7 y 19.1 de los no elegidos; con la mediana el orden es el mismo. Pero el 32% de los de primera ronda no hizo la prueba, más que en los otros grupos, y no sabemos por qué. Si esos jugadores fueran sistemáticamente más fuertes o más débiles, la comparación cambiaría. Una tabla que cuente como cero a quienes no hicieron la prueba da otro orden, pero mide participación, no fuerza."
+"Medí repeticiones en press de banca, no fuerza en general. Entre los jugadores que hicieron la prueba (excluidos los especialistas), los elegidos en primera ronda levantaron en promedio 22.3 repeticiones, frente a 20.7 de las rondas 2 a 7 y 19.1 de los no elegidos; con la mediana el orden es el mismo. Pero el 32% de los de primera ronda no hizo la prueba, más que en los otros grupos, y no sabemos por qué. Si esos jugadores fueran sistemáticamente más fuertes o más débiles, la comparación cambiaría. Una tabla que cuente como cero a quienes no hicieron la prueba da otro orden, pero mide participación, no repeticiones."
 </details>
 ```
 
@@ -464,4 +504,135 @@ El director de scouting no quiere una clase de estadística: quiere saber si los
 
 3. ¿Qué tendrías que comprobar antes de poner la cifra "22.3 repeticiones" en una diapositiva?
 
-**Para la próxima sesión.** Las tablas de hoy se convierten fácilmente en gráficas. En la sesión 4 veremos que una gráfica puede hacer que una diferencia de ocho centésimas parezca enorme, y cómo darse cuenta.
+Un número calculado sin errores todavía tiene que ser el número correcto para la pregunta. Esa decisión no la toma R ni la toma la IA: la toma, y la firma, quien presenta la tabla.
+
+---
+
+# Tarea 3 (después de clase): un indicador que puedas defender
+
+::: {.tarea}
+**Tiempo estimado:** 30–45 minutos.
+
+**Qué haces:** construyes **una variable derivada** (por ejemplo, peso en libras, índice de masa corporal propio, grupo del draft, un Speed Score para otra posición justificado) **o un resumen por grupos** (por ejemplo, una prueba física comparada entre posiciones o entre grupos del draft).
+
+**Qué entregas:** `sesion3_tarea.Rmd` (y, si quieres, su HTML) en la carpeta `sesion-3/` de tu repositorio, con estas partes: código ejecutable, definición explícita del indicador o estadístico, tabla de resultados, interpretación en lenguaje cotidiano, una comprobación de que el código hace lo que pretendes, una limitación de la medida y una bitácora.
+
+**IA:** opcional. Si la usas, registra en la bitácora qué propuesta aceptaste o rechazaste y cómo la comprobaste.
+:::
+
+## Paso 1. Elige qué vas a medir
+
+Escribe primero, sin código, la pregunta y la definición. Una definición sirve si otra persona podría calcular el mismo número sin preguntarte nada. Compara:
+
+- Vaga: *"la explosividad de los linebackers"*.
+- Explícita: *"la mediana del salto largo, en centímetros, de los linebackers (`ILB` y `OLB`) que hicieron la prueba, por grupo del draft"*.
+
+Evita inventar índices que sumen cosas con unidades distintas (centímetros más segundos, por ejemplo). Si quieres combinar medidas, justifica por qué tiene sentido o usa un indicador con una definición publicada y verificable, como el Speed Score para corredores.
+
+## Paso 2. Crea tu archivo con esta estructura
+
+*File > New File > R Markdown...*, borra el contenido de ejemplo, pega esta plantilla y guárdala como `sesion3_tarea.Rmd` en tu carpeta `curso-programacion-r/sesion-3/`.
+
+````{verbatim, lang = "markdown"}
+---
+title: "Tarea 3: un indicador que puedo defender"
+author: "Tu nombre"
+output: html_document
+---
+
+```{r preparacion, message=FALSE}
+library(dplyr)
+ruta_datos <- if (file.exists("datos/NFL.csv")) "datos/NFL.csv" else "../datos/NFL.csv"
+jugadores <- read.csv(ruta_datos)
+```
+
+## 1. Lo que quería conseguir
+
+Pregunta y definición explícita del indicador o estadístico (qué se calcula, con qué columnas, en qué unidades, sobre qué jugadores):
+
+## 2. Código
+
+```{r indicador}
+# Construye aquí tu variable con mutate() o tu resumen con group_by() + summarise().
+# Incluye siempre n() y cuántos jugadores tienen dato.
+```
+
+## 3. Comprobaciones
+
+```{r comprobaciones}
+# Al menos una comprobación de que el código hace lo que pretendes:
+# revisar a mano dos o tres jugadores, comprobar rangos con summary(),
+# contar categorías con table(), repetir un cálculo de otra forma...
+```
+
+Qué comprobé y qué encontré:
+
+## 4. Resultados e interpretación
+
+La tabla de arriba, explicada en lenguaje cotidiano para alguien que no programa:
+
+## 5. Conclusión que puedo defender y limitación
+
+Lo que puedo afirmar con estos resultados, y una limitación concreta de la medida elegida:
+
+## Bitácora de cambios
+
+| Fecha | Qué cambié | Por qué | Cómo lo comprobé | ¿Cambió el resultado? |
+|-------|------------|---------|------------------|------------------------|
+| | | | | |
+````
+
+## Paso 3. Completa y comprueba
+
+1. Escribe el código y pulsa **Knit** con frecuencia.
+2. Haz al menos **una comprobación** que te dé confianza en el resultado. Si construiste una variable, revisa a mano dos o tres jugadores (`select()` + `head()`) y comprueba que el valor calculado es el que esperarías. Si hiciste un resumen, comprueba que los conteos por grupo suman el total y que los mínimos y máximos son plausibles.
+3. Prueba al menos **una alternativa** razonable (media frente a mediana, incluir o excluir un grupo, otro tratamiento de los faltantes) y regístrala en la bitácora, la conserves o no.
+4. Escribe la interpretación como si se la explicaras al director de scouting, y una limitación concreta: no "hacen falta más datos", sino algo como "el 30% de los jugadores no hizo la prueba y podrían no parecerse a los que sí la hicieron".
+
+## Paso 4. Sube tu trabajo y documenta el cambio
+
+1. En tu repositorio, entra a `sesion-3` y usa **Add file > Upload files** para subir `sesion3_tarea.Rmd` (y el HTML, si quieres).
+2. En el mensaje del cambio, resume la fila más importante de tu bitácora, por ejemplo *Tarea 3: mediana del salto largo de LB por grupo del draft*.
+3. Si después corriges algo, vuelve a subir el archivo con el mismo nombre, añade la fila correspondiente a la bitácora y usa un mensaje que diga qué cambió.
+4. Comprueba en **History** que la versión visible es la última y que los mensajes se entienden.
+
+## Errores habituales
+
+| Lo que pasa | Qué suele significar | Qué hacer |
+|-------------|----------------------|-----------|
+| La tabla sale con `NA` | Faltan datos en algún grupo | Usa `na.rm = TRUE` **y** añade una columna con cuántos tienen dato |
+| La tabla tiene una sola fila | Falta `group_by()` antes de `summarise()` | Agrega el `group_by()` con la columna de los grupos |
+| `mutate()` "no hizo nada" | No guardaste el resultado | Asigna: `tabla <- tabla %>% mutate(...)` |
+| Desapareció la columna original | Usaste su mismo nombre dentro de `mutate()` | Crea una columna con nombre nuevo |
+| Todos quedan en la misma categoría de `case_when()` | La condición general (`TRUE ~`) está antes que las específicas | Pon `TRUE ~` al final |
+
+## Lista de comprobación
+
+- [ ] La definición del indicador permitiría a otra persona calcular el mismo número.
+- [ ] La tabla incluye cuántos jugadores hay en cada grupo y cuántos tienen dato.
+- [ ] Hay al menos una comprobación con código y explico qué encontré.
+- [ ] La interpretación se entiende sin saber R.
+- [ ] Hay una limitación concreta de la medida.
+- [ ] La bitácora tiene al menos una fila, con la comprobación incluida.
+- [ ] El archivo compila y está en `sesion-3/` con un mensaje de cambio descriptivo.
+
+## Cómo se evalúa
+
+| Criterio | Qué se revisa |
+|----------|---------------|
+| Definición | El indicador o estadístico está definido sin ambigüedad y tiene sentido para la pregunta |
+| Código | Compila y produce la tabla; los faltantes se tratan de forma explícita |
+| Comprobación | Hay al menos una verificación real, no solo "lo ejecuté y funcionó" |
+| Interpretación y limitación | Explicación en lenguaje cotidiano, sin exagerar, con una limitación concreta |
+| Bitácora y repositorio | Los cambios relevantes están registrados con su motivo y su comprobación; el archivo está en `sesion-3/` |
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Notas para quien imparte la sesión</summary>
+
+- El tramo de 25 a 45 minutos es el más denso (`grepl()`, `case_when()` y dos comprobaciones). Si el grupo va lento, la tabla por tipo de posición puede mostrarse sin que la escriban.
+- El orden de las condiciones en `case_when()` y la diferencia entre "no hizo la prueba" y "levantó cero veces" son los dos puntos que más discusión generan. Merece la pena detenerse en ellos.
+- El Ejercicio 3 es opcional. La sección 6 (bitácora) no debe saltarse: la tarea depende de ella.
+- En la tarea, conviene revisar que nadie sume medidas con unidades distintas para construir un "índice de talento": la consigna lo desaconseja explícitamente.
+</details>
+```

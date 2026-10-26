@@ -1,12 +1,13 @@
 ---
 title: "Sesión 2. La IA también decide qué datos vemos"
-subtitle: "¿Cómo cambia nuestra conclusión cuando elegimos qué jugadores incluir?"
+subtitle: "¿Cómo cambia nuestro análisis cuando elegimos qué jugadores incluir?"
 author: "Programar con criterio en la era de la IA · Caso: NFL Scouting Combine"
 date: "`r Sys.Date()`"
 output:
   html_document:
     toc: true
     toc_float: true
+    toc_depth: 2
     theme: flatly
     highlight: tango
 params:
@@ -16,7 +17,8 @@ params:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##")
 
-# Las soluciones se muestran plegadas. Para generar una versión sin soluciones:
+# Las soluciones y las notas para el profesor se muestran plegadas.
+# Para generar una versión sin ellas:
 # rmarkdown::render("Sesion_2_Explorar_y_filtrar.Rmd", params = list(soluciones = FALSE))
 mostrar_sol <- if (exists("params")) isTRUE(params$soluciones) else TRUE
 
@@ -27,13 +29,20 @@ options(width = 100)
 ```{css, echo=FALSE}
 details.solucion { border-left: 4px solid #18bc9c; background: #f4faf8; padding: 0.5em 1em; margin: 1em 0; }
 details.solucion summary { cursor: pointer; font-weight: bold; }
+.tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
+.ia { border-left: 4px solid #eb6834; background: #fdf5f1; padding: 0.6em 1em; margin: 1em 0; }
+.aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
 ```
 
 # Antes de empezar
 
-Esta sesión no depende de nada que hayas creado en la sesión 1: el archivo carga sus propios datos. Solo necesitas la carpeta `datos/` con `NFL.csv` junto a este `.Rmd`, y el paquete `dplyr`.
+Esta sesión no depende de nada que hayas creado en la sesión 1: el archivo carga sus propios datos. Necesitas `NFL.csv` y el paquete `dplyr`.
 
-Un **paquete** es un conjunto de funciones adicionales que alguien escribió y publicó para que no tengamos que programarlas desde cero. Se instala **una sola vez** en tu computadora y se carga con `library()` **cada vez** que lo usas. Si no tienes `dplyr`, escribe esto en la consola (no en el documento) y espera a que termine:
+**Los datos.** `NFL.csv` proviene del conjunto *NFL Combine - Performance Data (2009 - 2019)* de Kaggle (<https://www.kaggle.com/datasets/redlineracer/nfl-combine-performance-data-2009-2019>, licencia CC0), con datos de Pro Football Reference. La sesión 1 explica cómo descargarlo y qué contiene cada columna.
+
+**Tu archivo de trabajo.** Guarda una copia de este documento como `sesion2_trabajo.Rmd`. Puedes dejarla junto a este archivo (en la carpeta del curso) o en la carpeta `sesion-2/` de tu `curso-programacion-r`: el bloque de preparación busca los datos en los dos sitios.
+
+**El paquete `dplyr`.** Un **paquete** es un conjunto de funciones adicionales que alguien escribió y publicó para que no tengamos que programarlas desde cero. Se instala **una sola vez** en tu computadora y se carga con `library()` **cada vez** que lo usas. Si no tienes `dplyr`, escribe esto en la consola (no en el documento) y espera a que termine:
 
 ```{r, eval=FALSE}
 install.packages("dplyr")
@@ -45,9 +54,11 @@ if (!requireNamespace("dplyr", quietly = TRUE)) {
 }
 library(dplyr)
 
-ruta_datos <- "datos/NFL.csv"
+# Busca NFL.csv en datos/ (si este archivo está en la carpeta del curso) o en ../datos/
+# (si está dentro de sesion-2/ en tu repositorio, como se organizó en la tarea 1).
+ruta_datos <- if (file.exists("datos/NFL.csv")) "datos/NFL.csv" else "../datos/NFL.csv"
 if (!file.exists(ruta_datos)) {
-  stop("No encuentro ", ruta_datos, ". La carpeta 'datos' debe estar junto a este .Rmd (ver README).")
+  stop("No encuentro NFL.csv ni en datos/ ni en ../datos/. Revisa dónde está la carpeta 'datos'.")
 }
 jugadores <- read.csv(ruta_datos)
 
@@ -56,7 +67,15 @@ if (nrow(jugadores) != 3477 || ncol(jugadores) != 18) {
 }
 ```
 
-**Organización de la sesión (90 minutos)**
+## Qué vas a poder hacer al terminar
+
+1. Escribir condiciones con operadores de comparación (`==`, `<`, `<=`...) y lógicos (`&`, `|`, `!`, `%in%`), y predecir qué devuelven.
+2. Explicar qué hace R con un dato faltante (`NA`) en una comparación y contar faltantes con `is.na()`.
+3. Seleccionar columnas con `select()` y filtrar filas con `filter()`, encadenando pasos con `%>%`.
+4. Auditar un filtro: decir qué jugadores conserva, cuáles excluye y por qué, comprobándolo con conteos que cuadren.
+5. Comparar dos soluciones de código que responden "lo mismo" e identificar las decisiones en que difieren.
+
+## Organización de la sesión (90 minutos)
 
 | Minutos | Qué hacemos |
 |---------|-------------|
@@ -66,6 +85,8 @@ if (nrow(jugadores) != 3477 || ncol(jugadores) != 18) {
 | 45–65 | Actividad central: auditar una selección y compararla con la propuesta de una IA |
 | 65–80 | Ejercicio individual: verificar y cambiar una decisión |
 | 80–90 | Cómo decirlo en la reunión y cierre |
+
+Después de clase: **Tarea 2**, tu propia selección de jugadores, subida a tu repositorio (30–45 minutos).
 
 ---
 
@@ -154,8 +175,8 @@ tiempos == NA   # no sirve: todo sale NA
 Un truco que usaremos mucho: para R, `TRUE` vale 1 y `FALSE` vale 0. Así que `sum()` de una condición **cuenta** cuántas filas la cumplen, y `mean()` da la **proporción**:
 
 ```{r}
-sum(is.na(tiempos))            # cuántos faltan
-sum(tiempos < 4.4)             # NA: no puede contar lo que no sabe
+sum(is.na(tiempos))               # cuántos faltan
+sum(tiempos < 4.4)                # NA: no puede contar lo que no sabe
 sum(tiempos < 4.4, na.rm = TRUE)  # ignora los NA: cuenta solo los conocidos
 ```
 
@@ -188,6 +209,8 @@ filter(jugadores, Position = "QB")
 quarterbacks_resumen <- select(quarterbacks, Year, Player, Sprint_40yd, Bench_Press_Reps, Drafted)
 head(quarterbacks_resumen)
 ```
+
+`select()` no cambia qué jugadores hay: solo qué columnas ves. Es útil para leer mejor, pero no altera ningún resultado.
 
 ## El operador `%>%`: "y después"
 
@@ -252,7 +275,7 @@ mean(receptores_rapidos$Drafted == "Yes")
 
 Y escribió en el chat del equipo: *"Tenía razón el coordinador: 85% de los receptores rápidos fueron elegidos."*
 
-## Tu tarea (en parejas, unos 10 minutos)
+## Lo que tienes que averiguar (en parejas, unos 10 minutos)
 
 Responde con código, no de memoria:
 
@@ -319,7 +342,7 @@ Le planteamos la misma pregunta a un asistente de IA con esta petición:
 
 > "Tengo una tabla `jugadores` con datos del NFL Combine (columnas `Position`, `Position_Type`, `Sprint_40yd`, `Drafted`, entre otras). Quiero saber qué proporción de los receptores que corren las 40 yardas en menos de 4.4 segundos fue elegida en el draft. Escribe el código en R con `dplyr`."
 
-Lo que sigue es el tipo de respuesta que dan estas herramientas. La dejamos fija en el documento para que todos trabajen con el mismo material.
+Lo que sigue es una respuesta típica, redactada para el curso y fijada en el documento para que todos trabajen con el mismo material.
 
 ```{r}
 # Filtrar receptores con tiempo registrado y velocidad de élite
@@ -391,25 +414,23 @@ Y una decisión que ninguna de las dos versiones tomó: comparar con los recepto
 </details>
 ```
 
-## Si tienes acceso a una IA
-
-Pega el código del compañero y pregunta:
+::: {.ia}
+**Si tienes acceso a una IA.** Pega el código del compañero y pregunta:
 
 > "¿Qué decisiones está tomando este código al filtrar los datos? ¿Qué observaciones quedarían excluidas y por qué?"
 
 Luego **comprueba cada afirmación de la respuesta contando filas**. Si dice que se excluyen los jugadores sin tiempo, verifica cuántos son. Si dice que no se excluye a nadie más, verifica que las cuentas cuadren. Las explicaciones de una IA pueden ser correctas, incompletas o equivocadas, y suenan igual de seguras en los tres casos.
 
-Sin IA: la propuesta y la explicación de arriba cumplen la misma función.
+**Sin IA**: la propuesta y la explicación de arriba cumplen la misma función.
+:::
 
 ---
 
 # 5. Ejercicio individual
 
-Antes de modificar nada, guarda una copia de este archivo como `Sesion_2_v1.Rmd` y trabaja sobre el original. Anota tus cambios en la bitácora del final.
-
 ## Ejercicio 2. Los corchetes
 
-Otra compañera, que aprendió R antes de conocer `dplyr`, usa corchetes para filtrar. Este es su código:
+Otra compañera, que aprendió R antes de conocer `dplyr`, usa corchetes para filtrar. Dentro de los corchetes, lo que va antes de la coma elige filas y lo que va después elige columnas; si después de la coma no hay nada, se conservan todas. Este es su código:
 
 ```{r}
 rapidos_corchetes <- jugadores[jugadores$Position == "WR" & jugadores$Sprint_40yd < 4.4, ]
@@ -454,7 +475,7 @@ a) Calcula cuántos `CB` bajan de 4.45, cuántos no y cuántos no tienen tiempo.
 
 b) Calcula la proporción de elegidos en cada uno de los tres grupos.
 
-c) Escribe una fila en la bitácora: qué cambiaste respecto al análisis de receptores, por qué, y qué pasó con el resultado.
+c) Escribe en una frase qué cambiaste respecto al análisis de receptores, por qué, y qué pasó con el resultado. Esa frase es exactamente lo que escribirás como **mensaje del cambio** cuando subas un archivo a GitHub (lo practicarás en la tarea).
 
 ```{r}
 # Tu código
@@ -483,16 +504,9 @@ mean(cb_sin_tiempo$Drafted == "Yes")
 ```{asis, echo = mostrar_sol}
 Hay 393 *cornerbacks*: 117 bajan de 4.45, 265 no, y 11 no tienen tiempo. Fue elegido el 86% de los rápidos, frente al 65% de los demás. Con solo 11 jugadores sin tiempo, el 36% de ese grupo (4 jugadores) es una cifra muy frágil: un jugador más o menos la mueve casi 10 puntos.
 
-Fila de bitácora posible: "v2 · Cambié la posición (WR → CB) y el umbral (4.40 → 4.45) · Lo pidió el coordinador defensivo · 86% de elegidos entre los CB rápidos frente a 65% del resto; la brecha es menor que en receptores (85% frente a 56%)".
+Una frase posible: "Cambié la posición (WR a CB) y el umbral (4.40 a 4.45) a petición del coordinador defensivo: 86% de elegidos entre los CB rápidos frente a 65% del resto; la brecha es menor que en receptores (85% frente a 56%)". Un buen mensaje de cambio dice qué cambió, por qué y qué efecto tuvo; "cambios" o "versión nueva" no dicen nada.
 </details>
 ```
-
-**Bitácora de cambios**
-
-| Versión | Qué cambié | Por qué | ¿Cambió el resultado? |
-|---------|------------|---------|------------------------|
-| v1 | Versión original | — | — |
-| v2 | | | |
 
 ---
 
@@ -518,4 +532,145 @@ Es más larga que "85% de los receptores rápidos fueron elegidos", pero cada pa
 
 2. La versión de la IA y la del compañero dieron casi el mismo porcentaje. ¿Eso las hace equivalentes? ¿Qué tendrías que comprobar antes de presentar cualquiera de las dos?
 
-**Para la próxima sesión.** Hoy decidimos *sobre quiénes* hablamos. En la sesión 3 vamos a construir indicadores para comparar grupos, y veremos que *cómo* se calcula una cifra puede cambiar tanto como a quién se incluye.
+Quien presenta la cifra responde por la selección que hay detrás, la haya escrito o no. Por eso, en la tarea, además del código, vas a tener que explicar a quiénes dejaste fuera.
+
+---
+
+# Tarea 2 (después de clase): una selección de jugadores que puedas explicar
+
+::: {.tarea}
+**Tiempo estimado:** 30–45 minutos.
+
+**Qué haces:** formulas una pregunta de scouting, seleccionas las variables que necesitas y aplicas **al menos dos filtros**. Después compruebas qué jugadores quedaron dentro y fuera.
+
+**Qué entregas:** el archivo `sesion2_tarea.Rmd` (y, si quieres, su HTML) en la carpeta `sesion-2/` de tu repositorio `curso-programacion-r`, con **al menos dos versiones** en el historial.
+
+**IA:** puedes usarla o no. Si la usas, anota en la parte 4 qué le pediste, qué te propuso y qué comprobaste antes de aceptarlo.
+:::
+
+## Paso 1. Elige una pregunta
+
+Debe poder responderse con las columnas de `NFL.csv` y con lo que vimos hoy. Algunos ejemplos para inspirarte (elige uno o formula el tuyo, pero no copies el análisis de clase):
+
+- ¿Qué proporción de los *tight ends* (`TE`) que pesan más de 113 kg (unas 250 libras) fue elegida?
+- Entre los *linebackers* (`ILB`, `OLB`) con tiempo registrado, ¿cuántos bajaron de 4.6 segundos y qué proporción de ellos fue elegida?
+- ¿Cuántos defensivos de cobertura (`CB`, `FS`, `SS`, `S`) saltaron más de 100 cm en vertical, y de qué años son?
+
+## Paso 2. Crea tu archivo con esta estructura
+
+En RStudio: *File > New File > R Markdown...*, escribe el título y pulsa *OK*. RStudio crea un documento de ejemplo: borra todo su contenido y pega esta plantilla. Guárdalo como `sesion2_tarea.Rmd` dentro de tu carpeta `curso-programacion-r/sesion-2/`.
+
+````{verbatim, lang = "markdown"}
+---
+title: "Tarea 2: una selección de jugadores que puedo explicar"
+author: "Tu nombre"
+output: html_document
+---
+
+```{r preparacion, message=FALSE}
+library(dplyr)
+ruta_datos <- if (file.exists("datos/NFL.csv")) "datos/NFL.csv" else "../datos/NFL.csv"
+jugadores <- read.csv(ruta_datos)
+```
+
+## 1. Lo que quería conseguir
+
+Mi pregunta de scouting, en una o dos frases, y qué esperaba encontrar:
+
+## 2. Código
+
+```{r seleccion}
+# Columnas que uso y por qué: ...
+mi_seleccion <- jugadores %>%
+  select(Player, Year, Position, Drafted) %>%   # cambia por tus columnas
+  filter(Position == "TE")                       # cambia por tus filtros (al menos dos)
+
+nrow(mi_seleccion)
+```
+
+## 3. Comprobaciones
+
+```{r comprobaciones}
+# ¿Cuántos jugadores había antes de filtrar y cuántos quedan?
+# ¿Cuántos NA hay en las columnas que usas para filtrar?
+```
+
+Qué jugadores incluye mi selección y cuáles excluye (¿cuadran las cuentas?):
+
+## 4. Decisiones que conservé o descarté
+
+Una decisión de filtrado, la alternativa que probé, qué cambió y por qué me quedo con la mía.
+Si usé IA: qué le pedí, qué propuso y qué comprobé.
+
+## 5. Conclusión que puedo defender
+
+Una frase que diga a quiénes se refiere, qué encontré y quiénes quedaron fuera:
+````
+
+## Paso 3. Completa las cinco partes
+
+1. **Lo que querías conseguir**: tu pregunta y lo que esperabas.
+2. **El código**: `select()` con las columnas que necesitas y `filter()` con al menos dos condiciones, cada una con un comentario que diga por qué está ahí.
+3. **Las comprobaciones**: cuántos jugadores había antes y cuántos quedan; cuántos `NA` hay en las columnas que usas para filtrar (`sum(is.na(...))`); y si las cuentas cuadran cuando separas incluidos, excluidos y sin dato.
+4. **Las decisiones**: elige uno de tus filtros, prueba una alternativa razonable (otro umbral, `<` frente a `<=`, otra definición del grupo) y explica qué cambió y por qué te quedas con tu versión.
+5. **La conclusión**: una frase como la de la sección 6 de hoy, que diga a quiénes se refiere la cifra y quiénes quedaron fuera.
+
+Pulsa **Knit**. Si no compila, lee el mensaje de error antes de cambiar nada (abajo hay una tabla con los más frecuentes).
+
+## Paso 4. Sube tu archivo a GitHub
+
+1. Entra a tu repositorio `curso-programacion-r` y abre la carpeta `sesion-2`.
+2. **Add file > Upload files** y arrastra `sesion2_tarea.Rmd` (y el HTML, si quieres).
+3. En el mensaje del cambio escribe algo como *Tarea 2: selección de tight ends pesados*.
+4. Deja marcada la opción de confirmar en `main` y pulsa **Commit changes**.
+
+## Paso 5. Sube una segunda versión y comprueba el historial
+
+El objetivo es practicar lo que hace útil a GitHub: que una versión nueva no borre la anterior.
+
+1. Haz una mejora real en tu archivo: por ejemplo, una comprobación adicional o una explicación más clara en la parte 4. Guarda y vuelve a hacer **Knit**.
+2. Vuelve a subir el archivo **con el mismo nombre** a la misma carpeta (`sesion-2`). GitHub reemplaza el archivo y registra el cambio.
+3. Escribe un mensaje que diga qué mejoraste, por ejemplo *Tarea 2: agrego comprobación de faltantes en Weight*.
+4. Comprueba: abre `sesion2_tarea.Rmd` en GitHub y pulsa **History**. Debes ver dos versiones. Haz clic en la más reciente: GitHub marca en verde lo que añadiste y en rojo lo que quitaste. Busca en el archivo una línea que hayas cambiado para confirmar que la versión visible es la nueva.
+
+## Errores habituales
+
+| Lo que pasa | Qué suele significar | Qué hacer |
+|-------------|----------------------|-----------|
+| `could not find function "%>%"` | No se cargó `dplyr` | Revisa que el bloque de preparación tenga `library(dplyr)` y que se ejecute antes |
+| `object 'Positon' not found` | Nombre de columna mal escrito | Compara con `names(jugadores)`: mayúsculas y letras importan |
+| `We detected a named input` | Usaste `=` en lugar de `==` dentro de `filter()` | Cambia a `==` |
+| La selección tiene 0 filas | Filtros demasiado estrictos o texto mal escrito (`"wr"` en lugar de `"WR"`) | Aplica los filtros de uno en uno y mira cuántas filas quedan después de cada uno |
+| En GitHub aparece `sesion2_tarea (1).Rmd` | Tu computadora renombró el archivo al guardarlo o descargarlo | Sube el archivo con el nombre exacto; borra el duplicado (abre el archivo, menú **...** > *Delete file*) |
+| El historial muestra una sola versión | Subiste la segunda con otro nombre o a otra carpeta | Revisa nombre y carpeta, y repite el paso 5 |
+
+## Lista de comprobación
+
+- [ ] Mi pregunta se entiende sin leer el código.
+- [ ] Uso al menos dos filtros, cada uno con un comentario que explica por qué.
+- [ ] Digo cuántos jugadores quedan, cuántos excluí y cuántos no tenían el dato.
+- [ ] Probé una alternativa a uno de mis filtros y expliqué mi elección.
+- [ ] Mi conclusión no afirma más de lo que muestran mis números.
+- [ ] El archivo compila con Knit.
+- [ ] `sesion2_tarea.Rmd` está en `sesion-2/` y su historial muestra dos versiones con mensajes descriptivos.
+
+## Cómo se evalúa
+
+| Criterio | Qué se revisa |
+|----------|---------------|
+| Pregunta y variables | La pregunta es concreta y las columnas elegidas sirven para responderla |
+| Filtros | Al menos dos condiciones correctas y comentadas |
+| Comprobación | Incluidos, excluidos y faltantes contados; las cuentas cuadran |
+| Justificación | Se compara una alternativa y se explica la decisión con su efecto en el resultado |
+| Conclusión | Dice a quiénes se refiere y no exagera |
+| Versiones | Dos versiones en el historial, con mensajes que explican el cambio |
+
+```{asis, echo = mostrar_sol}
+<details class="solucion">
+<summary>Notas para quien imparte la sesión</summary>
+
+- Conviene dedicar tiempo a que `NA < 4.4` dé `NA` y a la técnica de "hacer que las cuentas cuadren": es la comprobación que más se reutiliza en el resto del curso.
+- Si la actividad central se alarga, el Ejercicio 2 (corchetes) puede resolverse en conjunto en cinco minutos; el Ejercicio 3 es el que prepara la tarea.
+- En la tarea, el paso 5 obliga a subir dos versiones del mismo archivo. Es la práctica de control de cambios de esta sesión; revise que el historial las muestre.
+</details>
+```
