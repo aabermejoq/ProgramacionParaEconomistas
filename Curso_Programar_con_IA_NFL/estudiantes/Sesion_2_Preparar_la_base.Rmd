@@ -1,0 +1,556 @@
+---
+title: "Sesión 2. De la base cruda a la base de análisis"
+subtitle: "Filtrar filas, crear columnas y elegir columnas con dplyr, paso a paso"
+author: "Programar con criterio en la era de la IA · Proyecto: pronosticar el éxito en la NFL"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    theme: flatly
+    highlight: tango
+---
+
+```{r formato, include=FALSE}
+# ==========================================================================
+# BLOQUE DE FORMATO
+# Solo sirve para que el documento HTML se vea bien. NO es parte de lo que
+# aprendemos en clase: no hace falta entenderlo ni modificarlo.
+# ==========================================================================
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##")
+options(width = 100)   # que las tablas no se corten en el HTML
+
+# Compilar desde la carpeta de este archivo (así funcionan las rutas como "datos/...")
+if (!is.null(knitr::current_input())) {
+  knitr::opts_knit$set(root.dir = dirname(knitr::current_input(dir = TRUE)))
+}
+```
+
+```{css, echo=FALSE}
+/* BLOQUE DE FORMATO: colores de los recuadros del HTML. No es parte de la clase. */
+.aprende { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
+.datos { border-left: 4px solid #1baf7a; background: #f1faf6; padding: 0.6em 1em; margin: 1em 0; }
+.tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
+.ia    { border-left: 4px solid #eb6834; background: #fdf5f1; padding: 0.6em 1em; margin: 1em 0; }
+.aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
+.mensaje { font-size: 1.2em; color: #104281; border-left: 5px solid #104281; padding: 0.3em 1em; margin: 1.2em 0; }
+.etiqueta { display: block; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b6a65; margin-bottom: 0.3em; }
+.chat-usuario { background: #eef2f7; border-radius: 14px 14px 4px 14px; padding: 0.6em 1em; margin: 1em 0 1em 12%; }
+.chat-ia { background: #fffaf7; border: 1px solid #f2c9b4; border-radius: 14px 14px 14px 4px; padding: 0.6em 1em; margin: 1em 12% 1em 0; }
+```
+
+# Antes de empezar: dos tipos de código
+
+::: {.aviso}
+Si abres este archivo en RStudio vas a ver, al principio, dos bloques marcados como **BLOQUE DE FORMATO**. Solo sirven para que el documento HTML se vea bien (márgenes, colores de los recuadros). **No son parte de la clase**: no hace falta entenderlos ni cambiarlos, y en el HTML no aparecen.
+
+**Todo el código que ves en el HTML es el código que estamos aprendiendo.** Cada línea lleva un comentario (lo que va después de `#`) que dice qué hace. R ignora los comentarios: son para las personas.
+:::
+
+En este documento vas a encontrar dos tipos de recuadros:
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+Qué hace una función nueva y cómo se escribe.
+:::
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+Qué decidimos sobre los jugadores y por qué. Es la parte de la historia de la NFL.
+:::
+
+---
+
+# Hoy
+
+**Dónde nos quedamos.** En la sesión 1 cargamos el archivo `nfl_data.csv` y lo miramos por dentro con `dim()`, `names()`, `head()` y `glimpse()`. Tiene 14,163 filas (una por jugador medido en el Combine) y 59 columnas.
+
+**La pregunta de hoy:**
+
+::: {.mensaje}
+¿Cuánto valor de carrera acumula, en promedio, un jugador elegido en el draft?
+:::
+
+Parece que basta con calcular un promedio. Pero antes hay que decidir **qué jugadores entran en la cuenta**: ¿todos los del archivo? ¿Solo los elegidos? ¿También los de 2023, que llevan dos temporadas? ¿Y los que nunca jugaron? Hoy vamos a preparar la base **paso a paso**, decidiendo y comprobando cada cosa, y al final responderemos la pregunta.
+
+**Lo que aprendes hoy de R:**
+
+| Función | Para qué sirve | Ejemplo |
+|---------|----------------|---------|
+| `$` | Sacar una columna de una tabla | `nfl$year` |
+| `table()` | Contar cuántas veces aparece cada valor | `table(nfl$drafted)` |
+| `nrow()` | Contar filas | `nrow(nfl)` |
+| `%>%` | Encadenar pasos: se lee "y luego" | `nfl %>% filter(...)` |
+| `filter()` | Quedarse con las **filas** que cumplen una condición | `filter(year >= 2000)` |
+| `mutate()` | Crear o cambiar una **columna** | `mutate(pro_bowl = pro_bowls >= 1)` |
+| `select()` | Quedarse con algunas **columnas** | `select(name, year)` |
+| `rename()` | Cambiarle el nombre a una columna | `rename(forty = X40_yard)` |
+| `is.na()` | Preguntar si un dato falta | `is.na(career_av)` |
+| `ifelse()` | Elegir un valor u otro, fila por fila | `ifelse(nunca_jugo, 0, career_av)` |
+| `mean()`, `median()` | Promedio y mediana | `mean(base$career_av)` |
+
+**Plan de la hora:**
+
+| Minutos | Qué hacemos |
+|---------|-------------|
+| 0–5 | Cargar la base (repaso) |
+| 5–15 | ¿Quiénes fueron elegidos? `$`, `table()` y el primer `filter()` con `%>%` |
+| 15–25 | ¿Qué años y qué posiciones? Más `filter()` |
+| 25–35 | Crear columnas con `mutate()`: los que nunca jugaron |
+| 35–42 | Elegir columnas: `select()` y `rename()`; la receta completa |
+| 42–52 | Primera respuesta y la versión de la IA |
+| 52–60 | Ejercicios y Tarea 2 |
+
+---
+
+# 1. Repaso: cargar la base
+
+Es el mismo código de la sesión 1. Ejecútalo bloque por bloque: clic en el triángulo verde del bloque, o `Ctrl + Enter` línea por línea (en Mac, `Cmd + Enter`).
+
+```{r}
+# Cargamos el paquete dplyr: trae las funciones para manipular tablas
+# (filter, mutate, select...) y el símbolo %>%
+library(dplyr)
+
+# Guardamos la dirección del archivo en un objeto llamado url_datos
+url_datos <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
+                    "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
+
+# Leemos el archivo y lo guardamos en el objeto nfl:
+#   sep = ";"           las columnas están separadas por punto y coma
+#   na.strings = ""     una celda vacía significa "dato faltante" (NA)
+#   encoding = "UTF-8"  para que los caracteres especiales se lean bien
+nfl <- read.csv(url_datos, sep = ";", na.strings = "", encoding = "UTF-8")
+
+# ¿Llegó completo? Deben ser 14,163 filas y 59 columnas
+dim(nfl)
+```
+
+Al ejecutar `library(dplyr)` puede aparecer un mensaje sobre objetos *masked*. No es un error: solo avisa que `dplyr` tiene funciones con el mismo nombre que otras de R. Puedes ignorarlo.
+
+*Si no tienes internet:* copia el archivo `datos/nfl_data.csv` del material del curso junto a tu archivo y cambia `url_datos` por `"datos/nfl_data.csv"`.
+
+---
+
+# 2. ¿Quiénes fueron elegidos?
+
+## Mirar una columna: `$` y `table()`
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`nfl$drafted` saca la columna `drafted` de la tabla `nfl`. `table()` cuenta cuántas veces aparece cada valor.
+:::
+
+```{r}
+# ¿Cuántos jugadores fueron elegidos en el draft y cuántos no?
+table(nfl$drafted)
+```
+
+8,234 fueron elegidos y 5,929 no. Pero fíjate en cómo están escritos: `"True"` y `"False"`, entre comillas. Son **texto**, no los valores lógicos `TRUE`/`FALSE` que R entiende como verdadero y falso. Así lo escribió quien armó el archivo, y hay que convertirlos.
+
+## Convertir una columna: `mutate()` y `%>%`
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`mutate()` crea o cambia una columna. Dentro escribimos `nombre_de_la_columna = lo_que_debe_valer`.
+
+`%>%` (se escribe con el atajo `Ctrl + Shift + M`; en Mac, `Cmd + Shift + M`) se lee **"y luego"**: toma lo que está a su izquierda y se lo pasa a la función de la derecha. `nfl %>% mutate(...)` se lee "toma `nfl` y luego cámbiale una columna".
+:::
+
+```{r}
+# Toma nfl, y luego convierte la columna drafted de texto a TRUE/FALSE.
+# El resultado se guarda en un objeto nuevo: nfl_2. El original no cambia.
+nfl_2 <- nfl %>%
+  mutate(drafted = as.logical(drafted))   # as.logical("True") da TRUE
+
+# Comprobamos: ahora debe decir FALSE y TRUE, sin comillas
+table(nfl_2$drafted)
+```
+
+Los números son los mismos; solo cambió el tipo de dato. Guardamos el resultado en `nfl_2` y **no tocamos `nfl`**: si nos equivocamos, el original sigue intacto.
+
+## Quedarse con algunas filas: `filter()`
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+El archivo solo tiene datos de carrera de los jugadores **elegidos** en el draft. De los demás no sabemos qué pasó. Así que nos quedamos con los elegidos.
+:::
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`filter()` se queda con las **filas** que cumplen una condición. `filter(drafted)` se queda con las filas donde `drafted` es `TRUE`. `nrow()` cuenta las filas que quedan.
+:::
+
+```{r}
+# Toma nfl_2, y luego quédate solo con las filas donde drafted es TRUE
+elegidos <- nfl_2 %>%
+  filter(drafted)
+
+# ¿Cuántas filas quedan? Deben ser las 8,234 que contó table()
+nrow(elegidos)
+```
+
+**Comprobar siempre.** Después de cada filtro contamos las filas. Si el número no es el que esperábamos, algo está mal y lo sabemos en ese momento, no al final.
+
+---
+
+# 3. ¿Qué años y qué posiciones?
+
+## Los años: 2000 a 2014
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+- **Hasta 2014.** El archivo llega a la temporada 2024. Un jugador elegido en 2014 tuvo al menos diez temporadas para acumular valor; uno elegido en 2022, solo tres. Si los mezcláramos, los jugadores recientes parecerían peores solo porque su carrera **todavía no termina**.
+- **Desde 2000.** Hasta 1993 el draft tenía más rondas; desde 2000 la liga se parece más a la actual, y quince generaciones de jugadores son suficientes para el proyecto.
+:::
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+Para comparar números: `>=` (mayor o igual), `<=` (menor o igual), `==` (igual; **dos** signos), `!=` (distinto). Dentro de `filter()`, una **coma** entre condiciones significa **"y"**: deben cumplirse todas.
+:::
+
+```{r}
+# Toma elegidos, y luego quédate con los años 2000 a 2014
+elegidos <- elegidos %>%
+  filter(year >= 2000,     # año mayor o igual que 2000
+         year <= 2014)     # y menor o igual que 2014
+
+nrow(elegidos)             # ¿cuántos quedan?
+```
+
+Esta vez guardamos el resultado con el mismo nombre, `elegidos`: la versión anterior se reemplaza por la filtrada.
+
+## Las posiciones: sin equipos especiales
+
+```{r}
+# ¿Cuántos jugadores hay de cada posición?
+table(elegidos$simple_pos)
+```
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+`ST` son los equipos especiales: pateadores y despejadores. Casi no hacen las pruebas del Combine y su valor de carrera se mide de otra manera. Los dejamos fuera.
+:::
+
+```{r}
+# Toma elegidos, y luego quédate con todos los que NO son ST
+elegidos <- elegidos %>%
+  filter(simple_pos != "ST")   # != significa "distinto de"; el texto va entre comillas
+
+nrow(elegidos)
+```
+
+**Resumen hasta aquí:**
+
+| Paso | Filas |
+|------|-------|
+| Archivo completo | 14,163 |
+| Elegidos en el draft | 8,234 |
+| Elegidos entre 2000 y 2014 | 3,232 |
+| Sin pateadores ni despejadores | 3,200 |
+
+---
+
+# 4. Crear columnas: los que nunca jugaron
+
+## ¿Qué falta en `career_av`?
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`is.na(x)` pregunta "¿falta este dato?" y responde `TRUE` o `FALSE` para cada fila. `sum()` de una columna de `TRUE`/`FALSE` cuenta los `TRUE`, porque R cuenta `TRUE` como 1 y `FALSE` como 0.
+:::
+
+```{r}
+# ¿A cuántos elegidos les falta el valor de carrera?
+sum(is.na(elegidos$career_av))
+```
+
+¿Quiénes son? Miramos a los que fueron elegidos en las primeras tres rondas:
+
+```{r}
+# Toma elegidos, y luego quédate con los que no tienen career_av y fueron elegidos
+# en las rondas 1 a 3, y luego muestra solo algunas columnas
+elegidos %>%
+  filter(is.na(career_av), draft_round <= 3) %>%
+  select(year, name, pos, draft_round, draft_pick, career_av)
+```
+
+`select()` se queda con las **columnas** que nombramos; lo veremos con calma en la sección 5.
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+Giovanni Carmazzi (2000), Maurice Clarett (2005) o Chad Jones (2010) **nunca jugaron un partido en la NFL**. El archivo deja en blanco su carrera. No es un dato perdido: su carrera existió y valió **cero**.
+
+¿Por qué no eliminarlos? Porque son justamente los fracasos más caros del draft. Si los borráramos, el promedio subiría y el draft parecería más acertado de lo que es.
+
+**Decisión:** les ponemos `career_av = 0` (y `g = 0`, partidos jugados) y dejamos una columna `nunca_jugo` para no perder el rastro.
+:::
+
+## Crear varias columnas con `mutate()`
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`ifelse(condición, valor_si_es_verdad, valor_si_es_falso)` elige un valor u otro **fila por fila**. Dentro de un mismo `mutate()` se pueden crear varias columnas separadas por comas, y cada una puede usar las que se crearon antes.
+:::
+
+```{r}
+elegidos <- elegidos %>%
+  mutate(
+    # 1. Nueva columna: TRUE si al jugador le falta career_av (nunca jugó)
+    nunca_jugo = is.na(career_av),
+    # 2. Si nunca jugó, career_av vale 0; si no, se queda como estaba
+    career_av  = ifelse(nunca_jugo, 0, career_av),
+    # 3. Lo mismo con g, los partidos jugados
+    g          = ifelse(nunca_jugo, 0, g),
+    # 4. Nueva columna: TRUE si fue al menos una vez al Pro Bowl
+    pro_bowl   = pro_bowls >= 1
+  )
+
+# Comprobaciones
+sum(is.na(elegidos$career_av))   # ya no falta ninguno: debe dar 0
+sum(elegidos$nunca_jugo)         # cuántos nunca jugaron
+mean(elegidos$pro_bowl)          # proporción que fue al Pro Bowl
+```
+
+La última línea es un truco útil: el **promedio** de una columna de `TRUE`/`FALSE` es la **proporción** de `TRUE`. Uno de cada ocho elegidos fue al Pro Bowl.
+
+---
+
+# 5. Elegir y renombrar columnas
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`select()` se queda con las columnas que nombramos, en ese orden. `rename(nombre_nuevo = nombre_viejo)` le cambia el nombre a una columna.
+:::
+
+En la sesión 1 viste que una columna se llama `X40_yard`: en el archivo original es `40_yard`, pero en R un nombre no puede empezar con un número y `read.csv()` le antepone una `X`. La renombramos a `forty`, que es más fácil de escribir:
+
+```{r}
+mini <- elegidos %>%
+  rename(forty = X40_yard) %>%                                 # X40_yard pasa a llamarse forty
+  select(name, year, simple_pos, draft_pick, forty, career_av)  # solo estas seis columnas
+
+head(mini)   # las primeras seis filas
+```
+
+De 59 columnas, el proyecto usa unas 30. En la receta (sección 7) las elegimos todas de una vez.
+
+---
+
+# 6. Un problema del archivo: nombres repetidos
+
+Este paso lo damos hecho: basta con entender qué hace.
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+La columna `tag` junta el nombre y la universidad de cada jugador. Hay 8 parejas de personas distintas con el mismo `tag`; varias son padre e hijo con el mismo nombre que fueron a la misma universidad. Al armar el archivo, se mezclaron sus datos: por ejemplo, a Mario Edwards, elegido en 2000, le quedó pegada la carrera de su hijo, elegido en 2015. **Decisión:** quitamos esas filas. En nuestros años son 3 jugadores.
+:::
+
+```{r}
+# duplicated() marca los tag que ya aparecieron antes; con eso hacemos la lista de repetidos
+tags_repetidos <- nfl$tag[duplicated(nfl$tag)]
+tags_repetidos
+
+# %in% pregunta "¿está en la lista?" y ! niega: nos quedamos con los que NO están
+elegidos <- elegidos %>%
+  filter(!(tag %in% tags_repetidos))
+
+nrow(elegidos)   # 3 menos que antes
+```
+
+---
+
+# 7. La receta completa
+
+Juntamos todos los pasos en un solo bloque, encadenados con `%>%`. Esta es **la receta**: la vas a copiar al principio de cada sesión, para que cada documento funcione solo, de principio a fin.
+
+Hay dos piezas que no vimos paso a paso:
+
+- `speed_score`: un indicador de velocidad que tiene en cuenta el peso (peso × 200 / tiempo⁴). Correr 4.5 segundos no tiene el mismo mérito pesando 80 kilos que 115. Lo usaremos más adelante.
+- `select()` con todas las columnas del proyecto. Las de `college_` son estadísticas de la universidad, también para más adelante.
+
+```{r}
+# ---------------------------------------------------------------
+# RECETA: de la base cruda (nfl) a la base de análisis (base)
+# ---------------------------------------------------------------
+tags_repetidos <- nfl$tag[duplicated(nfl$tag)]       # nombre + universidad repetidos
+
+base <- nfl %>%
+  rename(forty = X40_yard) %>%                       # nombre más cómodo
+  mutate(drafted = as.logical(drafted)) %>%          # "True"/"False" -> TRUE/FALSE
+  filter(drafted,                                    # solo elegidos: los únicos con carrera
+         year >= 2000, year <= 2014,                 # carreras de al menos diez temporadas
+         simple_pos != "ST",                         # sin pateadores ni despejadores
+         !(tag %in% tags_repetidos)) %>%             # sin filas con la carrera de otra persona
+  mutate(nunca_jugo  = is.na(career_av),             # elegido, pero nunca jugó
+         career_av   = ifelse(nunca_jugo, 0, career_av),
+         g           = ifelse(nunca_jugo, 0, g),
+         pro_bowl    = pro_bowls >= 1,               # fue al menos una vez al Pro Bowl
+         speed_score = weight * 200 / forty^4) %>%   # velocidad ajustada por peso
+  select(player_id, name, college, year, pos, simple_pos, draft_round, draft_pick, age,
+         height, weight, hand_size, arm_length, forty, vert_leap, broad_jump,
+         bench_press, shuttle, speed_score,
+         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo,
+         college_games, college_pass_yds, college_pass_td, college_rush_yds,
+         college_rec_yds, college_tackles, college_sacks, college_ints)
+
+# Comprobaciones
+nrow(base)                    # deben ser 3,197
+sum(is.na(base$career_av))    # 0: ya no falta ningún valor de carrera
+```
+
+Hace exactamente lo mismo que hicimos paso a paso, en otro orden (primero el `rename()`, al final el `select()`) y sin objetos intermedios. Por eso es la misma cantidad de filas.
+
+| Paso | Filas |
+|------|-------|
+| Archivo completo | 14,163 |
+| Elegidos en el draft | 8,234 |
+| Elegidos entre 2000 y 2014 | 3,232 |
+| Sin pateadores ni despejadores | 3,200 |
+| Sin `tag` repetido | 3,197 |
+
+Esta tabla es documentación: cada fila que se fue tiene una razón escrita.
+
+---
+
+# 8. La primera respuesta
+
+¿Cuánto valor de carrera acumula, en promedio, un jugador elegido?
+
+```{r}
+mean(base$career_av)     # el promedio
+median(base$career_av)   # la mediana: la mitad acumuló menos que esto
+```
+
+El promedio es 18 y la mediana, 8. ¿Por qué tan distintos? Porque unos pocos jugadores acumulan muchísimo (Tom Brady, 184) y jalan el promedio hacia arriba, mientras que la mitad de los elegidos se queda en 8 puntos o menos. Para describir al jugador **típico**, la mediana es más honesta. En la próxima sesión veremos esto con calma.
+
+---
+
+# 9. Actividad: la versión de la IA
+
+Le hicimos la misma pregunta a un asistente de IA. La respuesta fue **redactada para este curso** imitando la forma en que suelen contestar estas herramientas; el código sí se ejecuta con tus datos.
+
+::: {.chat-usuario}
+[Tú]{.etiqueta}
+
+Tengo en R un data frame `nfl` con datos del NFL Combine y del draft. ¿Cuánto valor de carrera (`career_av`) acumula en promedio un jugador elegido en el draft entre 2000 y 2014?
+:::
+
+::: {.chat-ia}
+[Asistente de IA]{.etiqueta}
+
+¡Excelente pregunta! 🏈 Aquí tienes un análisis **robusto**, eliminando los datos incompletos para evitar sesgos:
+
+```{r version-ia}
+df_clean <- nfl %>%
+  filter(drafted == "True", year >= 2000, year <= 2014) %>%
+  filter(!is.na(career_av), !is.na(X40_yard))   # eliminamos registros incompletos
+
+nrow(df_clean)
+mean(df_clean$career_av)
+median(df_clean$career_av)
+```
+
+✅ Un jugador drafteado típico acumula unos **21 puntos** de valor de carrera.
+:::
+
+En parejas, 5 minutos:
+
+a) ¿Con cuántos jugadores calcula la IA? ¿Y nosotros?
+
+b) La IA elimina a los que no tienen `career_av`. Con lo que viste en la sección 4, ¿quiénes son esos jugadores? ¿Su promedio sube o baja al quitarlos?
+
+c) También elimina a los que no tienen tiempo en 40 yardas. ¿Te parece que eso "evita sesgos"?
+
+d) ¿Qué cifra le darías al director general del equipo: 21, 18 u 8? Escríbelo en una frase.
+
+---
+
+# 10. Ejercicios
+
+Completa los espacios `___` y ejecuta. Usa siempre `base`.
+
+**Ejercicio 1.** ¿Cuántos mariscales de campo (`QB`) hay en la base?
+
+```{r, eval=FALSE}
+base %>%
+  filter(simple_pos == "___") %>%
+  nrow()
+```
+
+**Ejercicio 2.** ¿Cuál es la mediana del valor de carrera de los elegidos en la **primera ronda** (`draft_round`)? ¿Y en la séptima? ¿Qué te dice la diferencia?
+
+```{r, eval=FALSE}
+primera <- base %>% filter(draft_round == ___)
+median(primera$career_av)
+```
+
+**Ejercicio 3.** Busca a Tom Brady y muestra su año, su número de selección y su valor de carrera.
+
+```{r, eval=FALSE}
+base %>%
+  filter(name == "___") %>%
+  select(___, ___, ___)
+```
+
+---
+
+# Lo que aprendimos hoy
+
+| De R | De los datos |
+|------|--------------|
+| `$` y `table()` para mirar una columna | El archivo tiene 14,163 jugadores; 8,234 fueron elegidos |
+| `%>%`: encadenar pasos ("y luego") | Solo los elegidos tienen carrera registrada |
+| `filter()` con `==`, `!=`, `>=`, `<=` y comas | Usamos 2000–2014 para que las carreras estén completas |
+| `mutate()` con `is.na()` e `ifelse()` | Los que nunca jugaron cuentan como 0, no se eliminan |
+| `select()` y `rename()` | Hay errores en el archivo (nombres repetidos) que hay que quitar |
+| `nrow()` después de cada paso | La base de análisis tiene 3,197 jugadores |
+| `mean()` y `median()` | El promedio (18) y la mediana (8) cuentan historias distintas |
+
+---
+
+# Tarea 2 (después de clase): una decisión de limpieza
+
+::: {.tarea}
+**Tiempo estimado:** 30 minutos.
+
+**Qué entregas:** tu archivo `sesion2_trabajo.Rmd` (una copia de este documento con tus respuestas a los ejercicios y a esta tarea) en la carpeta `sesion-2/` de tu repositorio de GitHub.
+
+**Qué se valora:** que compruebes con los datos lo que calculas y que expliques tu decisión con tus palabras. Que el código se ejecute es necesario, pero no suficiente.
+:::
+
+Guarda una copia de este documento con *File > Save As...* y el nombre `sesion2_trabajo.Rmd`. Al final, agrega una sección `# Tarea 2`.
+
+El analista jefe te escribe:
+
+> "Para el modelo quiero una base limpia, sin un solo faltante. Quédate solo con los jugadores que tienen completas las cinco pruebas del Combine: 40 yardas, salto vertical, salto largo, press de banca y *shuttle*. Así nadie podrá decir que inventamos datos."
+
+**1. Anticipa.** Antes de ejecutar nada: ¿cuántos jugadores de los 3,197 crees que quedarán?
+
+**2. Haz lo que pide.** Completa los `___`:
+
+```r
+base_completa <- base %>%
+  filter(!is.na(forty), !is.na(vert_leap), !is.na(broad_jump),
+         !is.na(___), !is.na(___))
+
+nrow(base_completa)
+```
+
+**3. Compara** `base` y `base_completa`:
+
+- ¿Cuántos jugadores hay de cada posición? (`table(base$simple_pos)` y lo mismo con `base_completa`)
+- ¿Cuál es la mediana de `career_av` en cada una?
+- ¿Cuántos jugadores de primera ronda hay en cada una? Pista: `sum(base$draft_round == 1)`.
+
+**4. Decide.** En tres o cuatro frases: ¿usarías `base_completa` para pronosticar el éxito de **cualquier** jugador elegido? ¿Qué posición casi desaparece y por qué crees que pasa? ¿Qué le propondrías al analista jefe?
+
+**Para entregar:** en RStudio, botón **Knit** para comprobar que todo se ejecuta. Después, en GitHub, entra a tu repositorio, abre la carpeta `sesion-2`, **Add file > Upload files**, sube `sesion2_trabajo.Rmd` y escribe un mensaje como *Agregar trabajo de la sesión 2*. Si todavía no tienes repositorio, sigue la parte B de la Tarea 1.
+
+| Criterio | Qué se revisa |
+|----------|---------------|
+| Ejercicios 1 a 3 | Completos y ejecutados |
+| Tarea: comparación | Posiciones, mediana y primera ronda en las dos bases |
+| Tarea: decisión | Una explicación con tus palabras, apoyada en tus números |
+| Entrega | El archivo está en `sesion-2/` y se ejecuta de principio a fin |
