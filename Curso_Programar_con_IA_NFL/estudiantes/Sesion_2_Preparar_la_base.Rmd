@@ -72,7 +72,7 @@ Qué decidimos sobre los jugadores y por qué. Es la parte de la historia de la 
 ¿Cuánto valor de carrera acumula, en promedio, un jugador elegido en el draft?
 :::
 
-Parece que basta con calcular un promedio. Pero antes hay que decidir **qué jugadores entran en la cuenta**: ¿todos los del archivo? ¿Solo los elegidos? ¿También los de 2023, que llevan dos temporadas? ¿Y los que nunca jugaron? Hoy vamos a preparar la base **paso a paso**, decidiendo y comprobando cada cosa, y al final responderemos la pregunta.
+Parece que basta con calcular un promedio. Pero antes hay que decidir **qué jugadores entran en la cuenta**: ¿todos los del archivo? ¿Solo los elegidos? ¿También los de 2023, que llevan dos temporadas? ¿Y los que nunca jugaron? Hoy vamos a preparar la base **paso a paso**, decidiendo y comprobando cada cosa. Con la base lista, la responderemos en la próxima sesión.
 
 **Lo que aprendes hoy de R:**
 
@@ -88,48 +88,49 @@ Parece que basta con calcular un promedio. Pero antes hay que decidir **qué jug
 | `rename()` | Cambiarle el nombre a una columna | `rename(forty = X40_yard)` |
 | `is.na()` | Preguntar si un dato falta | `is.na(career_av)` |
 | `ifelse()` | Elegir un valor u otro, fila por fila | `ifelse(nunca_jugo, 0, career_av)` |
-| `mean()`, `median()` | Promedio y mediana | `mean(base$career_av)` |
 
 **Plan de la hora:**
 
 | Minutos | Qué hacemos |
 |---------|-------------|
 | 0–5 | Cargar la base (repaso) |
-| 5–15 | ¿Quiénes fueron elegidos? `$`, `table()` y el primer `filter()` con `%>%` |
+| 5–15 | ¿Quiénes fueron elegidos? `$`, `table()`, `class()` y el primer `filter()` con `%>%` |
 | 15–25 | ¿Qué años y qué posiciones? Más `filter()` |
 | 25–35 | Crear columnas con `mutate()`: los que nunca jugaron |
-| 35–42 | Elegir columnas: `select()` y `rename()`; la receta completa |
-| 42–52 | Primera respuesta y la versión de la IA |
-| 52–60 | Ejercicios y Tarea 2 |
+| 35–45 | Elegir y renombrar columnas; nombres repetidos |
+| 45–55 | La receta completa |
+| 55–60 | Tarea 2 |
 
 ---
 
 # 1. Repaso: cargar la base
 
-Es el mismo código de la sesión 1. Ejecútalo bloque por bloque: clic en el triángulo verde del bloque, o `Ctrl + Enter` línea por línea (en Mac, `Cmd + Enter`).
+Esta vez leemos el archivo `nfl_data.csv` desde tu computadora: tiene que estar en la misma carpeta que este documento o dentro de una carpeta llamada `datos`. Ejecuta el código bloque por bloque: clic en el triángulo verde del bloque, o `Ctrl + Enter` línea por línea (en Mac, `Cmd + Enter`).
 
 ```{r}
 # Cargamos el paquete dplyr: trae las funciones para manipular tablas
 # (filter, mutate, select...) y el símbolo %>%
 library(dplyr)
 
-# Guardamos la dirección del archivo en un objeto llamado url_datos
-url_datos <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
-                    "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
+# Buscamos el archivo nfl_data.csv: primero en la misma carpeta que este documento
+# y, si no está ahí, dentro de una carpeta llamada "datos"
+if (file.exists("nfl_data.csv")) {
+  ruta_datos <- "nfl_data.csv"
+} else {
+  ruta_datos <- "datos/nfl_data.csv"
+}
 
 # Leemos el archivo y lo guardamos en el objeto nfl:
 #   sep = ";"           las columnas están separadas por punto y coma
 #   na.strings = ""     una celda vacía significa "dato faltante" (NA)
 #   encoding = "UTF-8"  para que los caracteres especiales se lean bien
-nfl <- read.csv(url_datos, sep = ";", na.strings = "", encoding = "UTF-8")
+nfl <- read.csv(ruta_datos, sep = ";", na.strings = "", encoding = "UTF-8")
 
 # ¿Llegó completo? Deben ser 14,163 filas y 59 columnas
 dim(nfl)
 ```
 
 Al ejecutar `library(dplyr)` puede aparecer un mensaje sobre objetos *masked*. No es un error: solo avisa que `dplyr` tiene funciones con el mismo nombre que otras de R. Puedes ignorarlo.
-
-*Si no tienes internet:* copia el archivo `datos/nfl_data.csv` del material del curso junto a tu archivo y cambia `url_datos` por `"datos/nfl_data.csv"`.
 
 ---
 
@@ -145,9 +146,10 @@ Al ejecutar `library(dplyr)` puede aparecer un mensaje sobre objetos *masked*. N
 ```{r}
 # ¿Cuántos jugadores fueron elegidos en el draft y cuántos no?
 table(nfl$drafted)
+class(nfl$drafted)
 ```
 
-8,234 fueron elegidos y 5,929 no. Pero fíjate en cómo están escritos: `"True"` y `"False"`, entre comillas. Son **texto**, no los valores lógicos `TRUE`/`FALSE` que R entiende como verdadero y falso. Así lo escribió quien armó el archivo, y hay que convertirlos.
+8,234 fueron elegidos y 5,929 no. Pero fíjate en cómo están escritos: `"True"` y `"False"`, con minúsculas después de la primera letra. Son **texto**, no los valores lógicos `TRUE`/`FALSE` que R entiende como verdadero y falso. Así lo escribió quien armó el archivo, y hay que convertirlos.
 
 ## Convertir una columna: `mutate()` y `%>%`
 
@@ -164,11 +166,11 @@ table(nfl$drafted)
 nfl_2 <- nfl %>%
   mutate(drafted = as.logical(drafted))   # as.logical("True") da TRUE
 
-# Comprobamos: ahora debe decir FALSE y TRUE, sin comillas
-table(nfl_2$drafted)
+# Comprobamos
+class(nfl_2$drafted)
 ```
 
-Los números son los mismos; solo cambió el tipo de dato. Guardamos el resultado en `nfl_2` y **no tocamos `nfl`**: si nos equivocamos, el original sigue intacto.
+`class()` ahora dice `"logical"`: los valores son los mismos, solo cambió el tipo de dato. Guardamos el resultado en `nfl_2` y **no tocamos `nfl`**: si nos equivocamos, el original sigue intacto.
 
 ## Quedarse con algunas filas: `filter()`
 
@@ -266,7 +268,8 @@ nrow(elegidos)
 sum(is.na(elegidos$career_av))
 ```
 
-¿Quiénes son? Miramos a los que fueron elegidos en las primeras tres rondas:
+¿Quiénes son? Miramos a los que fueron elegidos en las primeras tres rondas.
+`select()` se queda con las **columnas** que nombramos; lo veremos con calma en la sección 5.
 
 ```{r}
 # Toma elegidos, y luego quédate con los que no tienen career_av y fueron elegidos
@@ -276,7 +279,6 @@ elegidos %>%
   select(year, name, pos, draft_round, draft_pick, career_av)
 ```
 
-`select()` se queda con las **columnas** que nombramos; lo veremos con calma en la sección 5.
 
 ::: {.datos}
 [La decisión sobre los datos]{.etiqueta}
@@ -334,7 +336,6 @@ mini <- elegidos %>%
 head(mini)   # las primeras seis filas
 ```
 
-De 59 columnas, el proyecto usa unas 30. En la receta (sección 7) las elegimos todas de una vez.
 
 ---
 
@@ -414,88 +415,6 @@ Esta tabla es documentación: cada fila que se fue tiene una razón escrita.
 
 ---
 
-# 8. La primera respuesta
-
-¿Cuánto valor de carrera acumula, en promedio, un jugador elegido?
-
-```{r}
-mean(base$career_av)     # el promedio
-median(base$career_av)   # la mediana: la mitad acumuló menos que esto
-```
-
-El promedio es 18 y la mediana, 8. ¿Por qué tan distintos? Porque unos pocos jugadores acumulan muchísimo (Tom Brady, 184) y jalan el promedio hacia arriba, mientras que la mitad de los elegidos se queda en 8 puntos o menos. Para describir al jugador **típico**, la mediana es más honesta. En la próxima sesión veremos esto con calma.
-
----
-
-# 9. Actividad: la versión de la IA
-
-Le hicimos la misma pregunta a un asistente de IA. La respuesta fue **redactada para este curso** imitando la forma en que suelen contestar estas herramientas; el código sí se ejecuta con tus datos.
-
-::: {.chat-usuario}
-[Tú]{.etiqueta}
-
-Tengo en R un data frame `nfl` con datos del NFL Combine y del draft. ¿Cuánto valor de carrera (`career_av`) acumula en promedio un jugador elegido en el draft entre 2000 y 2014?
-:::
-
-::: {.chat-ia}
-[Asistente de IA]{.etiqueta}
-
-¡Excelente pregunta! 🏈 Aquí tienes un análisis **robusto**, eliminando los datos incompletos para evitar sesgos:
-
-```{r version-ia}
-df_clean <- nfl %>%
-  filter(drafted == "True", year >= 2000, year <= 2014) %>%
-  filter(!is.na(career_av), !is.na(X40_yard))   # eliminamos registros incompletos
-
-nrow(df_clean)
-mean(df_clean$career_av)
-median(df_clean$career_av)
-```
-
-✅ Un jugador drafteado típico acumula unos **21 puntos** de valor de carrera.
-:::
-
-En parejas, 5 minutos:
-
-a) ¿Con cuántos jugadores calcula la IA? ¿Y nosotros?
-
-b) La IA elimina a los que no tienen `career_av`. Con lo que viste en la sección 4, ¿quiénes son esos jugadores? ¿Su promedio sube o baja al quitarlos?
-
-c) También elimina a los que no tienen tiempo en 40 yardas. ¿Te parece que eso "evita sesgos"?
-
-d) ¿Qué cifra le darías al director general del equipo: 21, 18 u 8? Escríbelo en una frase.
-
----
-
-# 10. Ejercicios
-
-Completa los espacios `___` y ejecuta. Usa siempre `base`.
-
-**Ejercicio 1.** ¿Cuántos mariscales de campo (`QB`) hay en la base?
-
-```{r, eval=FALSE}
-base %>%
-  filter(simple_pos == "___") %>%
-  nrow()
-```
-
-**Ejercicio 2.** ¿Cuál es la mediana del valor de carrera de los elegidos en la **primera ronda** (`draft_round`)? ¿Y en la séptima? ¿Qué te dice la diferencia?
-
-```{r, eval=FALSE}
-primera <- base %>% filter(draft_round == ___)
-median(primera$career_av)
-```
-
-**Ejercicio 3.** Busca a Tom Brady y muestra su año, su número de selección y su valor de carrera.
-
-```{r, eval=FALSE}
-base %>%
-  filter(name == "___") %>%
-  select(___, ___, ___)
-```
-
----
-
 # Lo que aprendimos hoy
 
 | De R | De los datos |
@@ -506,21 +425,18 @@ base %>%
 | `mutate()` con `is.na()` e `ifelse()` | Los que nunca jugaron cuentan como 0, no se eliminan |
 | `select()` y `rename()` | Hay errores en el archivo (nombres repetidos) que hay que quitar |
 | `nrow()` después de cada paso | La base de análisis tiene 3,197 jugadores |
-| `mean()` y `median()` | El promedio (18) y la mediana (8) cuentan historias distintas |
 
 ---
 
 # Tarea 2 (después de clase): una decisión de limpieza
 
 ::: {.tarea}
-**Tiempo estimado:** 30 minutos.
 
-**Qué entregas:** tu archivo `sesion2_trabajo.Rmd` (una copia de este documento con tus respuestas a los ejercicios y a esta tarea) en la carpeta `sesion-2/` de tu repositorio de GitHub.
+**Qué entregas:** tu archivo `sesion2_trabajo.Rmd` (una copia de este documento con tus respuestas) en la carpeta `sesion-2/` de tu repositorio de GitHub.
 
 **Qué se valora:** que compruebes con los datos lo que calculas y que expliques tu decisión con tus palabras. Que el código se ejecute es necesario, pero no suficiente.
 :::
 
-Guarda una copia de este documento con *File > Save As...* y el nombre `sesion2_trabajo.Rmd`. Al final, agrega una sección `# Tarea 2`.
 
 El analista jefe te escribe:
 
@@ -528,29 +444,37 @@ El analista jefe te escribe:
 
 **1. Anticipa.** Antes de ejecutar nada: ¿cuántos jugadores de los 3,197 crees que quedarán?
 
-**2. Haz lo que pide.** Completa los `___`:
+**2. Haz lo que pide.** Completa los `___` y quita los signos de gato (#) para que el código se ejecute:
 
-```r
-base_completa <- base %>%
-  filter(!is.na(forty), !is.na(vert_leap), !is.na(broad_jump),
-         !is.na(___), !is.na(___))
-
-nrow(base_completa)
+```{r}
+# base_completa <- base %>%
+# filter(!is.na(forty), !is.na(vert_leap), !is.na(broad_jump),
+# !is.na(___), !is.na(___))
+# nrow(base_completa)
 ```
+
 
 **3. Compara** `base` y `base_completa`:
 
 - ¿Cuántos jugadores hay de cada posición? (`table(base$simple_pos)` y lo mismo con `base_completa`)
+
+```{r}
+# aquí va tu código
+```
+
+
 - ¿Cuál es la mediana de `career_av` en cada una?
+
+```{r}
+# aquí va tu código
+```
+
 - ¿Cuántos jugadores de primera ronda hay en cada una? Pista: `sum(base$draft_round == 1)`.
+```{r}
+# aquí va tu código
+```
 
-**4. Decide.** En tres o cuatro frases: ¿usarías `base_completa` para pronosticar el éxito de **cualquier** jugador elegido? ¿Qué posición casi desaparece y por qué crees que pasa? ¿Qué le propondrías al analista jefe?
 
-**Para entregar:** en RStudio, botón **Knit** para comprobar que todo se ejecuta. Después, en GitHub, entra a tu repositorio, abre la carpeta `sesion-2`, **Add file > Upload files**, sube `sesion2_trabajo.Rmd` y escribe un mensaje como *Agregar trabajo de la sesión 2*. Si todavía no tienes repositorio, sigue la parte B de la Tarea 1.
 
-| Criterio | Qué se revisa |
-|----------|---------------|
-| Ejercicios 1 a 3 | Completos y ejecutados |
-| Tarea: comparación | Posiciones, mediana y primera ronda en las dos bases |
-| Tarea: decisión | Una explicación con tus palabras, apoyada en tus números |
-| Entrega | El archivo está en `sesion-2/` y se ejecuta de principio a fin |
+**Para entregar:** en RStudio, botón **Knit** para comprobar que todo se ejecuta. Después, en GitHub, entra a tu repositorio, abre la carpeta `sesion-2`, **Add file > Upload files**, sube `sesion2_trabajo.Rmd` y escribe un mensaje como *Agregar trabajo de la sesión 2*. 
+
