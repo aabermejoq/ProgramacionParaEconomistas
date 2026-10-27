@@ -302,8 +302,8 @@ if (hay_graficas) {
     scale_shape_manual(values = c("Promedio real de cada décimo" = 16, "Mediana real de cada décimo" = 21),
                        breaks = c("Promedio real de cada décimo", "Mediana real de cada décimo"), name = NULL) +
     scale_linetype_manual(values = c("Pronóstico perfecto" = "dashed"), name = NULL) +
-    scale_x_continuous(trans = "sqrt", breaks = cortes, limits = c(0, 190)) +
-    scale_y_continuous(trans = "sqrt", breaks = cortes, limits = c(0, 190)) +
+    scale_x_sqrt(breaks = cortes, limits = c(0, 190)) +
+    scale_y_sqrt(breaks = cortes, limits = c(0, 190)) +
     coord_equal() +
     labs(title = "Más información mejora el pronóstico, pero el ruido sigue siendo enorme",
          subtitle = paste0("Valor de carrera pronosticado y real · ", mil(nrow(pru)), " jugadores elegidos en 2011–2014"),
