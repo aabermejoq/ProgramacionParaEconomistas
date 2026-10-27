@@ -62,8 +62,8 @@ Al final de la sesión tendrás una lista de candidatos a predictores, cada uno 
 | 30–45 | ¿Es comparable? Posición, ronda y generación con `group_by()` |
 | 45–55 | Correlaciones globales |
 | 55–70 | Actividad central: la versión normal y la versión IA |
-| 70–80 | Dentro de cada posición; verificar |
-| 80–90 | Faltantes y sesgo de selección; Tarea 2 |
+| 70–80 | Dentro de cada posición; la producción universitaria (NCAA) |
+| 80–90 | Verificar; faltantes y sesgo de selección; Tarea 2 |
 
 ---
 
@@ -76,8 +76,9 @@ library(dplyr)
 
 url_datos <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
                     "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
-nfl <- tryCatch(read.csv(url_datos, sep = ";", na.strings = ""),
-                error = function(e) read.csv("datos/nfl_data.csv", sep = ";", na.strings = ""))
+nfl <- tryCatch(read.csv(url_datos, sep = ";", na.strings = "", encoding = "UTF-8"),
+                error = function(e) read.csv("datos/nfl_data.csv", sep = ";", na.strings = "",
+                                             encoding = "UTF-8"))
 
 tags_repetidos <- nfl$tag[duplicated(nfl$tag)]   # nombre + universidad repetidos
 
@@ -96,7 +97,9 @@ base <- nfl |>
   select(player_id, name, college, year, pos, simple_pos, draft_round, draft_pick, age,
          height, weight, hand_size, arm_length, forty, vert_leap, broad_jump,
          bench_press, shuttle, speed_score,
-         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo)
+         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo,
+         college_games, college_pass_yds, college_pass_td, college_rush_yds,
+         college_rec_yds, college_tackles, college_sacks, college_ints)
 
 if (nrow(base) != 3197) warning("La base no tiene 3,197 jugadores: revisa la receta.")
 ```
@@ -418,7 +421,97 @@ Lo que se ve, con prudencia:
 
 ---
 
-# 6. Verificar: comprobaciones independientes
+# 6. La producción universitaria (NCAA)
+
+**Por qué importa:** antes del Combine, los equipos ya vieron jugar a estos muchachos durante años en la universidad. El archivo trae algunas de sus estadísticas universitarias (las columnas `college_` que seleccionó la receta). ¿Se relacionan con el éxito profesional?
+
+Cada estadística tiene sentido solo para algunas posiciones: un mariscal lanza pases; un liniero defensivo, no. Primero, ¿qué datos hay en cada posición?
+
+```{r}
+base |>
+  group_by(simple_pos) |>
+  summarise(jugadores      = n(),
+            partidos       = mean(!is.na(college_games)),
+            pases          = mean(!is.na(college_pass_yds)),
+            carreras       = mean(!is.na(college_rush_yds)),
+            recepciones    = mean(!is.na(college_rec_yds)),
+            tacleadas      = mean(!is.na(college_tackles)),
+            intercepciones = mean(!is.na(college_ints))) |>
+  mutate(across(partidos:intercepciones, ~ round(100 * .x)))
+```
+
+`mean(!is.na(x))` es la proporción de jugadores que **sí** tienen el dato; la multiplicamos por 100 para leerla como porcentaje. `partidos:intercepciones` significa "todas las columnas desde `partidos` hasta `intercepciones`". Lo que se ve:
+
+- Los mariscales (QB) tienen estadísticas de pase; corredores, receptores y alas cerradas (RB, WR, TE), de carreras y recepciones; los defensivos (DL, LB, DB), de tacleadas, capturas e intercepciones.
+- La línea ofensiva (OL) no tiene ninguna: su trabajo, bloquear, no deja estadísticas individuales. Casi tampoco tiene partidos registrados.
+- A los defensivos les faltan muchas tacleadas. ¿Por qué?
+
+```{r}
+base |>
+  filter(simple_pos %in% c("DL", "LB", "DB")) |>
+  group_by(year) |>
+  summarise(con_tacleadas = round(mean(!is.na(college_tackles)), 2))
+```
+
+Hasta 2005 no hay ni una tacleada registrada; desde 2006, casi todas. El faltante no depende del jugador, sino del año: la fuente empezó a registrar esa estadística en algún momento. Es otro faltante que **no ocurre al azar**: entre los defensivos, comparar a quienes tienen el dato con quienes no lo tienen es comparar jugadores de épocas distintas.
+
+Para usar estas estadísticas construimos una variable por cada una, solo para las posiciones en las que tiene sentido. Lo hacemos con una **función**: un bloque de código con nombre que se puede aplicar a cualquier tabla. En la sesión 3 aprenderás a escribir las tuyas; por ahora basta con saber leerla. `function(datos)` dice que recibe una tabla, a la que llama `datos`, y lo que está entre llaves es lo que hace con ella.
+
+```{r}
+defensa <- c("DL", "LB", "DB")
+
+agregar_ncaa <- function(datos) {
+  datos |>
+    mutate(
+      ncaa_yardas_pase      = ifelse(simple_pos == "QB", log1p(pmax(college_pass_yds, 0)), 0),
+      ncaa_td_pase          = ifelse(simple_pos == "QB", log1p(college_pass_td), 0),
+      ncaa_yardas_tierra    = ifelse(simple_pos == "RB", log1p(pmax(college_rush_yds, 0)), 0),
+      ncaa_yardas_recepcion = ifelse(simple_pos %in% c("WR", "TE"), log1p(pmax(college_rec_yds, 0)), 0),
+      ncaa_tacleadas        = ifelse(simple_pos %in% defensa, log1p(college_tackles), 0),
+      ncaa_capturas         = ifelse(simple_pos %in% defensa, log1p(college_sacks), 0),
+      ncaa_intercepciones   = ifelse(simple_pos %in% defensa, log1p(college_ints), 0),
+      ncaa_partidos         = college_games
+    )
+}
+
+base <- agregar_ncaa(base)
+summary(base$ncaa_yardas_pase[base$simple_pos == "QB"])
+```
+
+Tres decisiones dentro de la función:
+
+- **`ifelse(posición, valor, 0)`.** Para un liniero, "yardas por pase" no es un dato que falte: no aplica. Le ponemos 0. Cuando el dato sí aplica pero no está, queda `NA`, y en la sesión 4 decidiremos qué hacer con esos faltantes.
+- **`log1p(x)`** es `log(1 + x)`. Las yardas van de 0 a más de 16,000, y pasar de 1,000 a 2,000 yardas dice más que pasar de 15,000 a 16,000. El logaritmo comprime las diferencias entre números grandes; el `1 +` evita el logaritmo de 0, que no existe. Por eso la variable de los mariscales va de 0 a casi 10 y no de 0 a 16,000.
+- **`pmax(x, 0)`** reemplaza los valores negativos por 0. Un corredor puede terminar con yardas negativas si lo derriban detrás de donde empezó la jugada, y el logaritmo de un número negativo no existe.
+
+¿Se relacionan con el éxito? Para cada posición tomamos su estadística principal (pases para QB, carreras para RB, recepciones para WR y TE, tacleadas para los defensivos) y la comparamos con el valor de carrera, igual que en la sección 5:
+
+```{r}
+base |>
+  filter(simple_pos != "OL") |>
+  mutate(produccion = case_when(simple_pos == "QB" ~ ncaa_yardas_pase,
+                                simple_pos == "RB" ~ ncaa_yardas_tierra,
+                                simple_pos %in% c("WR", "TE") ~ ncaa_yardas_recepcion,
+                                TRUE ~ ncaa_tacleadas)) |>
+  group_by(simple_pos) |>
+  summarise(con_dato     = sum(!is.na(produccion)),
+            r_produccion = cor(produccion, career_av, use = "complete.obs"),
+            r_partidos   = cor(ncaa_partidos, career_av, use = "complete.obs"))
+```
+
+`case_when()` es un `ifelse()` con varias condiciones: se lee de arriba abajo y usa la primera que se cumple; `TRUE ~` es "en cualquier otro caso".
+
+Lo que se ve, con prudencia:
+
+- La producción universitaria se relaciona con el éxito sobre todo en **corredores y alas cerradas**, con correlaciones de alrededor de 0.3, del mismo orden que las de la velocidad en la sección 5. En receptores y defensivos, poco; en mariscales, nada.
+- Los **partidos jugados en la universidad** tienen correlación negativa en receptores y alas cerradas: quienes jugaron más partidos universitarios tendieron a tener menos éxito. Una explicación posible, no la única: los mejores dejan la universidad antes para entrar al draft, así que juegan menos partidos. Se podría poner a prueba comparando los partidos universitarios de los elegidos en la primera ronda con los de las últimas.
+- Detrás de cada correlación hay un número distinto de jugadores (`con_dato`): las de los defensivos se calculan solo con los drafts desde 2006.
+
+Desde ahora, la función `agregar_ncaa()` y la línea `base <- agregar_ncaa(base)` son parte de la receta: aparecen al principio de las sesiones 3, 4 y 5.
+
+---
+
+# 7. Verificar: comprobaciones independientes
 
 Antes de creer una cifra, compruébala por otro camino.
 
@@ -443,7 +536,7 @@ cor(base$forty, base$career_av, use = "complete.obs", method = "spearman")
 
 ---
 
-# 7. Faltantes y sesgo de selección
+# 8. Faltantes y sesgo de selección
 
 ## ¿Faltan al azar?
 
@@ -466,7 +559,7 @@ base |>
   summarise(jugadores = n(), av_medio = mean(career_av))
 ```
 
-Los jugadores sin tiempo en 40 yardas son más frecuentes en las últimas rondas y acumulan, en promedio, mucho menos valor. Un análisis que los elimine estudia a un grupo más exitoso que la base completa. Es lo que pasó con la versión IA de la sesión 1.
+Los jugadores sin tiempo en 40 yardas son más frecuentes en las últimas rondas y acumulan, en promedio, mucho menos valor. Un análisis que los elimine estudia a un grupo más exitoso que la base completa. Es lo que pasó con la versión IA de la sesión 1. En la sesión 4 veremos una alternativa a eliminarlos: marcarlos y rellenar el dato.
 
 ## La columna `age`: un faltante que delata el resultado
 
@@ -486,7 +579,7 @@ Esto se llama **sesgo de selección**: la base no es una muestra al azar de "jug
 
 ---
 
-# 8. Lo que sabemos y lo que todavía no sabemos
+# 9. Lo que sabemos y lo que todavía no sabemos
 
 | Lo que sabemos | Lo que todavía no sabemos |
 |----------------|---------------------------|
@@ -544,7 +637,7 @@ b) `speed_score` combina peso y velocidad. Compara su correlación dentro de cad
 
 ## Parte B. Tu exploración
 
-1. Identifica **al menos tres** características que puedan servir como predictores del éxito y que se conozcan en el momento del draft. Para cada una, muestra el cálculo que la respalda (dentro de cada posición) y cuántos jugadores hay detrás.
+1. Identifica **al menos tres** características que puedan servir como predictores del éxito y que se conozcan en el momento del draft (del Combine o de la universidad). Para cada una, muestra el cálculo que la respalda (dentro de cada posición) y cuántos jugadores hay detrás.
 2. Documenta **una relación que esperabas encontrar** y **otra que te sorprendió**, con el código que la muestra.
 3. Describe **dos comprobaciones** que hiciste para verificar tus resultados (un conteo, un cálculo alternativo, un caso concreto).
 4. Escribe una frase sobre una limitación de tus conclusiones relacionada con los faltantes o con el sesgo de selección.

@@ -37,7 +37,7 @@ if (!is.null(knitr::current_input())) {
 
 # Para empezar
 
-Ya sabes cómo se distribuye el éxito, que depende mucho de la posición y que, dentro de cada posición, la velocidad (sobre todo ajustada por peso) y los saltos se relacionan algo con él. Hoy convertimos esas pistas en **pronósticos** y los ponemos a prueba con jugadores que el modelo nunca vio.
+Ya sabes cómo se distribuye el éxito, que depende mucho de la posición y que, dentro de cada posición, la velocidad (sobre todo ajustada por peso), los saltos y, en algunas posiciones, la producción universitaria se relacionan algo con él. Hoy convertimos esas pistas en **pronósticos** y los ponemos a prueba con jugadores que el modelo nunca vio.
 
 ::: {.mensaje}
 Con lo que se sabe el día del draft, ¿cuánto valor de carrera tendrá un jugador? ¿Y qué probabilidad tiene de llegar al Pro Bowl?
@@ -48,21 +48,23 @@ No vas a aprender toda la teoría de cada modelo. Vas a aprender lo necesario pa
 ## Qué vas a poder hacer al terminar
 
 1. Distinguir entre explicar una relación, seleccionar variables y predecir observaciones nuevas.
-2. Dividir los datos en entrenamiento y prueba de forma coherente con la pregunta.
+2. Dividir los datos en entrenamiento y prueba de forma coherente con la pregunta, y tratar los faltantes sin perder jugadores ni usar información de la prueba.
 3. Construir un modelo de referencia y medir el error con MAE y RMSE.
 4. Estimar e interpretar una regresión lineal, una logística y una probit.
-5. Usar Elastic Net para seleccionar y regularizar predictores, y explicar por qué su selección puede cambiar.
-6. Comparar modelos fuera de muestra y reconocer una fuga de información.
+5. Transformar la variable de éxito y explicar qué cambia en lo que pronostica el modelo.
+6. Usar Elastic Net para seleccionar y regularizar predictores, y explicar por qué su selección puede cambiar.
+7. Comparar modelos fuera de muestra y reconocer una fuga de información.
 
 ## Organización de la sesión (90 minutos)
 
 | Minutos | Qué hacemos |
 |---------|-------------|
 | 0–10 | Preparación; explicar, seleccionar, predecir; qué predictores se permiten |
-| 10–22 | Entrenamiento y prueba; el modelo de referencia; MAE y RMSE |
-| 22–38 | Regresión lineal: antes y después del draft |
-| 38–52 | Pro Bowl: regresión logística y probit; AUC, sensibilidad y especificidad |
-| 52–65 | Elastic Net: seleccionar y regularizar |
+| 10–20 | Entrenamiento y prueba; marcar y rellenar los faltantes; el modelo de referencia; MAE y RMSE |
+| 20–35 | Regresión lineal: antes y después del draft |
+| 35–45 | Transformar el éxito: la raíz cuadrada |
+| 45–55 | Pro Bowl: regresión logística y probit; AUC, sensibilidad y especificidad |
+| 55–65 | Elastic Net: seleccionar y regularizar |
 | 65–72 | Ajustar bien no es pronosticar bien; la tabla de comparación |
 | 72–85 | Actividad central: el modelo con R² = 0.89 |
 | 85–90 | Tarea 4 |
@@ -71,7 +73,7 @@ No vas a aprender toda la teoría de cada modelo. Vas a aprender lo necesario pa
 
 # 0. Preparación
 
-La receta de la sesión 1 y el paquete `glmnet` (Elastic Net):
+La receta de las sesiones 1 y 2, y el paquete `glmnet` (Elastic Net):
 
 ```{r receta}
 library(dplyr)
@@ -79,8 +81,9 @@ library(glmnet)
 
 url_datos <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
                     "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
-nfl <- tryCatch(read.csv(url_datos, sep = ";", na.strings = ""),
-                error = function(e) read.csv("datos/nfl_data.csv", sep = ";", na.strings = ""))
+nfl <- tryCatch(read.csv(url_datos, sep = ";", na.strings = "", encoding = "UTF-8"),
+                error = function(e) read.csv("datos/nfl_data.csv", sep = ";", na.strings = "",
+                                             encoding = "UTF-8"))
 
 tags_repetidos <- nfl$tag[duplicated(nfl$tag)]   # nombre + universidad repetidos
 
@@ -99,9 +102,30 @@ base <- nfl |>
   select(player_id, name, college, year, pos, simple_pos, draft_round, draft_pick, age,
          height, weight, hand_size, arm_length, forty, vert_leap, broad_jump,
          bench_press, shuttle, speed_score,
-         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo)
+         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo,
+         college_games, college_pass_yds, college_pass_td, college_rush_yds,
+         college_rec_yds, college_tackles, college_sacks, college_ints)
 
 if (nrow(base) != 3197) warning("La base no tiene 3,197 jugadores: revisa la receta.")
+
+# Producción universitaria (sesión 2)
+defensa <- c("DL", "LB", "DB")
+
+agregar_ncaa <- function(datos) {
+  datos |>
+    mutate(
+      ncaa_yardas_pase      = ifelse(simple_pos == "QB", log1p(pmax(college_pass_yds, 0)), 0),
+      ncaa_td_pase          = ifelse(simple_pos == "QB", log1p(college_pass_td), 0),
+      ncaa_yardas_tierra    = ifelse(simple_pos == "RB", log1p(pmax(college_rush_yds, 0)), 0),
+      ncaa_yardas_recepcion = ifelse(simple_pos %in% c("WR", "TE"), log1p(pmax(college_rec_yds, 0)), 0),
+      ncaa_tacleadas        = ifelse(simple_pos %in% defensa, log1p(college_tackles), 0),
+      ncaa_capturas         = ifelse(simple_pos %in% defensa, log1p(college_sacks), 0),
+      ncaa_intercepciones   = ifelse(simple_pos %in% defensa, log1p(college_ints), 0),
+      ncaa_partidos         = college_games
+    )
+}
+
+base <- agregar_ncaa(base)
 ```
 
 ---
@@ -124,8 +148,10 @@ Depende de **cuándo** se hace el pronóstico:
 
 | Momento | Predictores permitidos | Nunca como predictores (fuga de información) |
 |---------|------------------------|----------------------------------------------|
-| **Antes del draft** | Posición, estatura, peso, pruebas del Combine, `speed_score` | `career_av`, `pro_bowls`, `g`, `years_as_primary_starter`, `all_pros_first_team`, `year_max` y todas las estadísticas profesionales (pases, carreras, recepciones, tackles, intercepciones, capturas) |
+| **Antes del draft** | Posición, estatura, peso, pruebas del Combine, `speed_score`, estadísticas universitarias (`ncaa_...`) | `career_av`, `pro_bowls`, `g`, `years_as_primary_starter`, `all_pros_first_team`, `year_max` y todas las estadísticas profesionales (pases, carreras, recepciones, tacleadas, intercepciones, capturas en la NFL) |
 | **Después del draft** | Lo anterior + `draft_round` y `draft_pick` | Lo mismo |
+
+Cuidado con los nombres: `pass_yds` son las yardas por pase **en la NFL**, que se conocen después del resultado; `college_pass_yds`, las de la **universidad**, que se conocen antes del draft.
 
 Una **fuga de información** ocurre cuando un predictor contiene, directa o indirectamente, el resultado que se quiere pronosticar. El modelo parece excelente en los datos y es inútil en la práctica, porque ese predictor no existirá cuando haya que decidir. `draft_pick` no es una fuga si el pronóstico se hace **después** del draft, pero entonces el modelo no sirve para decidir **a quién** elegir.
 
@@ -133,29 +159,15 @@ En la sesión 2 viste un caso más sutil: `age` es información del draft, pero 
 
 ---
 
-# 2. La muestra del modelo y la división en entrenamiento y prueba
-
-## Qué jugadores entran al modelo
-
-Un modelo de regresión necesita todos sus predictores en cada fila. Usaremos las tres pruebas con menos faltantes (40 yardas, salto vertical y salto largo), además de estatura y peso, que no faltan nunca:
-
-```{r}
-modelo_datos <- base |>
-  filter(!is.na(forty), !is.na(vert_leap), !is.na(broad_jump))
-
-nrow(modelo_datos)
-nrow(base) - nrow(modelo_datos)   # jugadores sin alguna de las tres pruebas
-```
-
-Perdemos una cuarta parte de la base, y en la sesión 2 viste que a los jugadores sin pruebas les fue peor. Esta decisión hace que el modelo aprenda de un grupo algo más exitoso que el total. Es una **limitación que debe quedar escrita**. Usar también `bench_press` y `shuttle` habría dejado fuera a la mitad (Tarea 1).
+# 2. Los datos del modelo: entrenamiento, prueba y faltantes
 
 ## Entrenamiento y prueba: una división temporal
 
 El indicador se usará para pronosticar drafts **futuros**. La evaluación tiene que imitar esa situación: aprender con unos años y pronosticar otros posteriores.
 
 ```{r}
-entrenamiento <- modelo_datos |> filter(year <= 2010)   # 11 drafts para aprender
-prueba        <- modelo_datos |> filter(year >= 2011)   # 4 drafts que el modelo no ve
+entrenamiento <- base |> filter(year <= 2010)   # 11 drafts para aprender
+prueba        <- base |> filter(year >= 2011)   # 4 drafts que el modelo no ve
 
 nrow(entrenamiento)
 nrow(prueba)
@@ -164,8 +176,77 @@ nrow(prueba)
 Si eligiéramos los jugadores de prueba al azar, el modelo aprendería con jugadores de 2013 para "pronosticar" a otros de 2005: estaría viendo el futuro. La división temporal es más exigente y más honesta.
 
 ::: {.aviso}
-**La regla de oro de la evaluación:** toda decisión (qué variables usar, qué parámetros elegir, qué umbral aplicar) se toma **solo con el conjunto de entrenamiento**. El conjunto de prueba se usa al final, una vez, para medir el error. Si miras la prueba para decidir y luego reportas su error, ese error ya no mide lo que pasará con datos nuevos.
+**La regla de oro de la evaluación:** toda decisión (qué variables usar, qué parámetros elegir, qué umbral aplicar, con qué valor rellenar un faltante) se toma **solo con el conjunto de entrenamiento**. El conjunto de prueba se usa al final, una vez, para medir el error. Si miras la prueba para decidir y luego reportas su error, ese error ya no mide lo que pasará con datos nuevos.
 :::
+
+## Qué hacer con los faltantes
+
+Un modelo de regresión necesita todos sus predictores en cada fila. Si a un jugador le falta uno, `lm()` lo deja fuera **sin avisar**. ¿Cuántos jugadores tienen las cinco pruebas del Combine?
+
+```{r}
+base |>
+  filter(!is.na(forty), !is.na(vert_leap), !is.na(broad_jump),
+         !is.na(bench_press), !is.na(shuttle)) |>
+  nrow()
+```
+
+Es la propuesta de la Tarea 1: perderíamos la mitad de la base, y no al azar. En la sesión 2 viste que a los jugadores sin pruebas les fue peor; un modelo que los descarte aprende de un grupo más exitoso que el total. Con las estadísticas universitarias sería peor todavía: faltan para casi todos los defensivos anteriores a 2006.
+
+La alternativa tiene dos pasos:
+
+1. **Marcar.** Una columna nueva, por ejemplo `sin_forty`, dice si el jugador **no** corrió las 40 yardas (`TRUE`) o sí (`FALSE`).
+2. **Rellenar.** El faltante se reemplaza por la **mediana de su posición**, calculada **solo con el entrenamiento**.
+
+Hacen falta los dos. El relleno permite usar la fila; la marca le dice al modelo que ese valor no se midió, para que aprenda si no hacer la prueba dice algo del jugador. Así nadie "inventa datos" a escondidas: la marca queda en la tabla. Y la mediana sale del entrenamiento por la regla de oro: si usáramos la prueba para calcularla, información de los drafts "futuros" entraría en el modelo.
+
+```{r}
+pruebas           <- c("forty", "vert_leap", "broad_jump", "bench_press", "shuttle")
+estadisticas_ncaa <- c("ncaa_yardas_pase", "ncaa_td_pase", "ncaa_yardas_tierra",
+                       "ncaa_yardas_recepcion", "ncaa_tacleadas", "ncaa_capturas",
+                       "ncaa_intercepciones")
+
+marcar_y_rellenar <- function(datos, aprende) {
+  # 1. Marcar qué le falta a cada jugador, antes de rellenar
+  datos <- datos |>
+    mutate(across(all_of(pruebas), is.na, .names = "sin_{.col}"),
+           sin_ncaa     = if_any(all_of(estadisticas_ncaa), is.na),
+           sin_partidos = is.na(ncaa_partidos))
+  # 2. Rellenar cada faltante con la mediana de su posición entre los jugadores de `aprende`
+  for (v in c(pruebas, estadisticas_ncaa, "ncaa_partidos")) {
+    medianas <- tapply(aprende[[v]], aprende$simple_pos, median, na.rm = TRUE)
+    datos[[v]] <- ifelse(is.na(datos[[v]]), medianas[datos$simple_pos], datos[[v]])
+  }
+  # 3. Recalcular speed_score con el tiempo ya rellenado
+  datos |> mutate(speed_score = weight * 200 / forty^4)
+}
+
+prueba        <- marcar_y_rellenar(prueba, aprende = entrenamiento)
+entrenamiento <- marcar_y_rellenar(entrenamiento, aprende = entrenamiento)
+```
+
+Pieza por pieza:
+
+- `across(all_of(pruebas), is.na, .names = "sin_{.col}")` aplica `is.na()` a cada prueba y guarda el resultado en una columna nueva: `sin_forty`, `sin_vert_leap`, etc.
+- `if_any(..., is.na)` vale `TRUE` si al jugador le falta **alguna** estadística universitaria de su posición. Una sola marca para todas, porque casi siempre faltan juntas.
+- `for (v in ...)` repite el bloque entre llaves para cada variable; `datos[[v]]` es la columna que se llama como el valor de `v`.
+- `tapply(x, grupo, median, na.rm = TRUE)` calcula la mediana de `x` en cada grupo y devuelve un vector con nombres (una mediana por posición). `medianas[datos$simple_pos]` toma, para cada jugador, la de su posición.
+- Primero se prepara la prueba, con el entrenamiento todavía sin rellenar: así queda claro que las medianas salen de los datos originales del entrenamiento.
+
+Comprobaciones:
+
+```{r}
+sum(is.na(entrenamiento[c(pruebas, estadisticas_ncaa)]))   # 0: ya no falta nada
+sum(is.na(prueba[c(pruebas, estadisticas_ncaa)]))          # 0
+c(entrenamiento = nrow(entrenamiento), prueba = nrow(prueba))   # nadie se quedó fuera
+
+entrenamiento |>
+  group_by(sin_forty) |>
+  summarise(jugadores = n(), av_medio = mean(career_av))
+```
+
+Los 3,197 jugadores siguen en el análisis. Y la marca no es un detalle: los que no corrieron las 40 yardas acumularon, en promedio, bastante menos valor.
+
+**Lo que este método no hace:** no adivina cuánto habría corrido el jugador. Pone un valor típico para poder usar la fila y deja la marca. Si el faltante de una variable dependiera del propio resultado, como pasa con `age`, ni marcar ni rellenar lo arreglaría (Tarea 4).
 
 ---
 
@@ -202,7 +283,7 @@ rmse(prueba$career_av, prueba$pred_referencia)
 
 | Medida | Cálculo | Cómo se lee |
 |--------|---------|-------------|
-| **MAE** (error absoluto medio) | Promedio de los errores sin signo | "En promedio, nos equivocamos por unos 18 puntos de valor de carrera" |
+| **MAE** (error absoluto medio) | Promedio de los errores sin signo | "En promedio, nos equivocamos por unos 17 puntos de valor de carrera" |
 | **RMSE** (raíz del error cuadrático medio) | Eleva los errores al cuadrado, promedia y saca raíz | Igual que el MAE, pero los errores grandes pesan mucho más |
 
 Con una distribución tan asimétrica, las dos medidas pueden elegir ganadores distintos. Mira lo que pasa si pronosticamos la **mediana** del entrenamiento para todos:
@@ -213,7 +294,7 @@ mae(prueba$career_av, mediana_ent)
 rmse(prueba$career_av, mediana_ent)
 ```
 
-La mediana mejora el MAE de la referencia y empeora mucho el RMSE: acierta mejor con la mayoría y falla más con las estrellas. **La métrica se elige antes de comparar, según lo que importa.** En el proyecto reportaremos las dos y usaremos el MAE como principal, porque se lee directamente en puntos de valor de carrera.
+La mediana mejora el MAE de la referencia y empeora mucho el RMSE: acierta mejor con la mayoría y falla más con las estrellas. **La métrica se elige antes de comparar, según lo que importa.** En el proyecto reportaremos las dos y usaremos el MAE como principal, porque se lee directamente en puntos de valor de carrera. Esta tensión entre pronosticar el valor típico y el promedio volverá en la sección 6.
 
 ---
 
@@ -223,42 +304,81 @@ La mediana mejora el MAE de la referencia y empeora mucho el RMSE: acierta mejor
 
 Una regresión lineal pronostica `career_av` como una suma: un punto de partida más un tanto por cada predictor. Cada **coeficiente** dice cuánto cambia el pronóstico cuando su variable aumenta en una unidad **y las demás se mantienen iguales**.
 
-```{r}
-modelo_pre <- lm(career_av ~ simple_pos + height + weight + forty + vert_leap + broad_jump,
-                 data = entrenamiento)
+Empezamos con lo que se mide en el Combine: estatura, peso, las cinco pruebas y sus cinco marcas de faltante.
 
-round(coef(summary(modelo_pre)), 2)
-summary(modelo_pre)$r.squared
+```{r}
+modelo_combine <- lm(career_av ~ simple_pos + height + weight +
+                       forty + vert_leap + broad_jump + bench_press + shuttle +
+                       sin_forty + sin_vert_leap + sin_broad_jump + sin_bench_press + sin_shuttle,
+                     data = entrenamiento)
+
+round(coef(summary(modelo_combine)), 2)
+summary(modelo_combine)$r.squared
 ```
 
 - `lm()` estima el modelo. La fórmula se lee "`career_av` en función de (`~`) posición, estatura, peso...".
 - `simple_pos` es texto: R crea una variable 0/1 por posición y deja una como **referencia** (DB, la primera en orden alfabético). El coeficiente de `simple_posOL`, por ejemplo, compara a un liniero ofensivo con un DB de iguales medidas.
+- Las marcas son `TRUE`/`FALSE`, y R las convierte en 0/1: `sin_fortyTRUE` compara a quienes no corrieron con quienes sí.
 - `Estimate` es el coeficiente; `Std. Error`, su incertidumbre; `Pr(>|t|)`, qué tan compatible es con que el verdadero valor sea cero.
 
-**Cómo leer `forty`:** el coeficiente es de unos −28 puntos por segundo. Como nadie corre un segundo más rápido, conviene traducirlo: **0.1 segundos menos se asocian con unos 2.8 puntos más** de valor de carrera esperado, entre jugadores de igual posición, estatura, peso y saltos.
+**Cómo leer `forty`:** el coeficiente es de unos −29 puntos por segundo. Como nadie corre un segundo más rápido, conviene traducirlo: **0.1 segundos menos se asocian con unos 2.9 puntos más** de valor de carrera esperado, entre jugadores de igual posición, medidas y resultados en las demás pruebas.
+
+**Cómo leer `sin_fortyTRUE`:** unos −8 puntos. Los jugadores que no corrieron las 40 yardas acumularon, a igual posición y medidas, unos 8 puntos menos. No es que saltarse la prueba cause nada: no hacerla es una **señal**, y el dato no dice de qué (una lesión, la decisión de su representante...). Si hubiéramos eliminado a esos jugadores, el modelo nunca la habría visto.
 
 Un ejemplo concreto: dos corredores idénticos salvo en su tiempo.
 
 ```{r}
-dos_corredores <- data.frame(simple_pos = "RB", height = 70, weight = 215,
-                             forty = c(4.4, 4.6), vert_leap = 35, broad_jump = 120)
-predict(modelo_pre, newdata = dos_corredores)
+dos_corredores <- data.frame(simple_pos = "RB", height = 70, weight = 215, forty = c(4.4, 4.6),
+                             vert_leap = 35, broad_jump = 120, bench_press = 20, shuttle = 4.2,
+                             sin_forty = FALSE, sin_vert_leap = FALSE, sin_broad_jump = FALSE,
+                             sin_bench_press = FALSE, sin_shuttle = FALSE)
+predict(modelo_combine, newdata = dos_corredores)
 ```
 
-**Cómo leer el R²:** 0.066 significa que el modelo reproduce el 6.6% de la variación del éxito **en el entrenamiento**. Las medidas del Combine se relacionan con el éxito, pero dejan casi todo sin explicar.
+**Cómo leer el R²:** 0.06 significa que el modelo reproduce el 6% de la variación del éxito **en el entrenamiento**. Las medidas del Combine se relacionan con el éxito, pero dejan casi todo sin explicar.
 
 **Lo que este modelo no dice:** que bajar el tiempo en 40 yardas *cause* más éxito. Los rápidos pueden diferir en muchas otras cosas que el modelo no ve (calidad universitaria, salud, inteligencia de juego). Es una relación en estos datos, útil para pronosticar si se mantiene en el futuro.
 
 ## ¿Pronostica mejor que la referencia?
 
 ```{r}
-prueba$pred_pre <- predict(modelo_pre, newdata = prueba)
+prueba$pred_combine <- predict(modelo_combine, newdata = prueba)
 
+mae(prueba$career_av, prueba$pred_combine)
+rmse(prueba$career_av, prueba$pred_combine)
+```
+
+Mejora a la referencia, pero poco: el error medio baja menos de medio punto. Las pruebas físicas **aportan información, poca**.
+
+## Añadir la producción universitaria
+
+Escribir fórmulas tan largas invita a errores. `reformulate()` arma la fórmula a partir de un vector con los nombres de los predictores. Primero comprobamos que da la misma fórmula del Combine:
+
+```{r}
+predictores_combine <- c("simple_pos", "height", "weight", pruebas, paste0("sin_", pruebas))
+reformulate(predictores_combine, response = "career_av")
+```
+
+`paste0("sin_", pruebas)` pega `sin_` delante de cada nombre. Ahora añadimos las estadísticas universitarias de la sesión 2 y sus marcas:
+
+```{r}
+predictores_pre <- c(predictores_combine, estadisticas_ncaa, "ncaa_partidos", "sin_ncaa", "sin_partidos")
+
+modelo_pre <- lm(reformulate(predictores_pre, response = "career_av"), data = entrenamiento)
+
+round(coef(summary(modelo_pre))[c(estadisticas_ncaa, "ncaa_partidos", "sin_ncaaTRUE"), ], 2)
+summary(modelo_pre)$r.squared
+
+prueba$pred_pre <- predict(modelo_pre, newdata = prueba)
 mae(prueba$career_av, prueba$pred_pre)
 rmse(prueba$career_av, prueba$pred_pre)
 ```
 
-Mejora a la referencia, pero poco: el error medio baja apenas unas décimas de punto. Las pruebas físicas **aportan información, poca**.
+Los corchetes `[filas, ]` se quedan con las filas de la tabla de coeficientes que nombramos. Lectura:
+
+- Las variables universitarias están en logaritmo (`log1p`, sesión 2), así que se leen en términos de **duplicar**: un corredor con el doble de yardas universitarias por tierra tiene un pronóstico unos 7 × log(2) ≈ 5 puntos más alto, a igualdad de todo lo demás.
+- `ncaa_partidos` es negativo: más partidos universitarios, menos valor esperado. Es lo que viste en la sesión 2 con receptores y alas cerradas.
+- El R² sube de 0.06 a 0.09 y el MAE baja otra vez, poco. **Antes del draft, la información de la universidad suma algo a la del Combine.**
 
 ---
 
@@ -284,52 +404,134 @@ mae(prueba$career_av, prueba$pred_post)
 rmse(prueba$career_av, prueba$pred_post)
 ```
 
-El error baja mucho más que con el Combine. ¿Y si juntamos las dos fuentes?
+El error baja mucho más que con el Combine y la universidad juntos. ¿Y si juntamos todo?
 
 ```{r}
-modelo_post_combine <- lm(career_av ~ simple_pos + log(draft_pick) + height + weight +
-                            forty + vert_leap + broad_jump, data = entrenamiento)
-prueba$pred_post_combine <- predict(modelo_post_combine, newdata = prueba)
-mae(prueba$career_av, prueba$pred_post_combine)
-rmse(prueba$career_av, prueba$pred_post_combine)
+modelo_post_todo <- lm(reformulate(c(predictores_pre, "log(draft_pick)"), response = "career_av"),
+                       data = entrenamiento)
+prueba$pred_post_todo <- predict(modelo_post_todo, newdata = prueba)
+mae(prueba$career_av, prueba$pred_post_todo)
+rmse(prueba$career_av, prueba$pred_post_todo)
 ```
 
-Prácticamente igual. **Una vez que se sabe dónde fue elegido un jugador, las pruebas del Combine no añaden información**: los equipos ya las tuvieron en cuenta, junto con todo lo que vieron en sus partidos. Recuerda la condición: este pronóstico solo existe **después** del draft.
+Prácticamente igual. **Una vez que se sabe dónde fue elegido un jugador, las pruebas del Combine y la producción universitaria casi no añaden información**: los equipos ya las tuvieron en cuenta, junto con todo lo que vieron en sus partidos. Recuerda la condición: este pronóstico solo existe **después** del draft.
 
 ---
 
-# 6. Pro Bowl: regresión logística y probit
+# 6. Transformar el éxito: la raíz cuadrada
+
+## Intuición
+
+La mitad de los jugadores acumula 8 puntos o menos, y unos pocos pasan de 100 (sesión 2). Una regresión lineal pronostica **promedios**, y el promedio se lo llevan hacia arriba las estrellas. ¿Qué le pasa entonces al jugador típico?
+
+```{r}
+median(prueba$career_av - prueba$pred_pre)
+```
+
+Para el jugador típico, el modelo antes del draft pronostica unos 8 puntos **de más**. Muchos errores pequeños hacia arriba, para compensar unos pocos errores enormes hacia abajo (las estrellas que nadie anticipó).
+
+Una salida es modelar una versión **comprimida** del éxito. La raíz cuadrada acerca los valores grandes sin tocar el orden: √0 = 0, √9 = 3, √100 = 10, √184 ≈ 13.6. Estimamos el modelo con la raíz y, para volver a puntos de valor de carrera, elevamos el pronóstico al cuadrado.
+
+```{r}
+entrenamiento$raiz_av <- sqrt(pmax(entrenamiento$career_av, 0))
+
+raiz_pre  <- lm(reformulate(predictores_pre, response = "raiz_av"), data = entrenamiento)
+raiz_post <- lm(reformulate(c(predictores_pre, "log(draft_pick)"), response = "raiz_av"),
+                data = entrenamiento)
+
+prueba$pred_raiz_pre  <- pmax(predict(raiz_pre,  newdata = prueba), 0)^2
+prueba$pred_raiz_post <- pmax(predict(raiz_post, newdata = prueba), 0)^2
+```
+
+- `pmax(career_av, 0)`: la raíz de un número negativo no existe. Hay un único jugador con valor negativo (Ryan Lindley, sesión 1); lo tratamos como 0.
+- `pmax(predict(...), 0)^2`: el modelo pronostica raíces y las elevamos al cuadrado. Si alguna saliera negativa, la dejamos en 0 antes de elevarla; si no, −3 al cuadrado daría 9.
+
+## ¿Qué cambia?
+
+```{r}
+data.frame(
+  modelo = c("Lineal antes del draft", "Raíz antes del draft",
+             "Lineal después del draft", "Raíz después del draft"),
+  mae  = c(mae(prueba$career_av, prueba$pred_pre),       mae(prueba$career_av, prueba$pred_raiz_pre),
+           mae(prueba$career_av, prueba$pred_post_todo), mae(prueba$career_av, prueba$pred_raiz_post)),
+  rmse = c(rmse(prueba$career_av, prueba$pred_pre),       rmse(prueba$career_av, prueba$pred_raiz_pre),
+           rmse(prueba$career_av, prueba$pred_post_todo), rmse(prueba$career_av, prueba$pred_raiz_post)),
+  error_mediano = c(median(prueba$career_av - prueba$pred_pre),
+                    median(prueba$career_av - prueba$pred_raiz_pre),
+                    median(prueba$career_av - prueba$pred_post_todo),
+                    median(prueba$career_av - prueba$pred_raiz_post)),
+  pronostico_medio = c(mean(prueba$pred_pre), mean(prueba$pred_raiz_pre),
+                       mean(prueba$pred_post_todo), mean(prueba$pred_raiz_post))
+) |>
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
+
+c(media_observada = mean(prueba$career_av), mediana_observada = median(prueba$career_av))
+```
+
+Los cuatro modelos usan los mismos predictores dos a dos; solo cambia la variable que pronostican. Lo que se ve:
+
+- **El MAE baja mucho** con la raíz: casi dos puntos antes del draft y casi uno después. **El RMSE sube un poco.**
+- **El error mediano se acerca a 0**: el jugador típico ya no recibe un pronóstico inflado.
+- **El pronóstico medio cae por debajo del promedio observado.**
+
+Las tres cosas cuentan la misma historia: el modelo con raíz pronostica algo parecido al **valor típico** (la mediana) de los jugadores como él, no el promedio. Acierta mejor con la mayoría y falla más con las estrellas: es la tensión entre media y mediana de la sección 3. Para un equipo que quiere saber qué carrera es la más probable para un jugador, sirve más. Para quien necesita el promedio, por ejemplo para sumar el valor esperado de todo un draft, sirve menos. Como nuestra métrica principal es el MAE, **en la sesión 5 el modelo principal será el de la raíz**.
+
+## Ejercicio 1. ¿Y con logaritmo?
+
+El logaritmo comprime todavía más que la raíz. Estima los dos modelos (antes y después del draft) con `log1p(career_av)` como resultado y vuelve a puntos con `expm1()`, la operación inversa de `log1p()`. Compara su MAE, su RMSE y su pronóstico medio con los de la tabla. ¿Cuál elegirías? Pista: después del draft, mira qué valor de carrera pronostica el modelo para los jugadores elegidos en las primeras selecciones, y compáralo con lo que acumularon.
+
+```{r}
+# Tu código
+```
+
+## Ejercicio 2. ¿Y el año del draft?
+
+¿Cambió el valor de carrera con el tiempo? Si así fuera, quizá convendría incluir el año.
+
+a) Añade `factor(year)` (un efecto propio para cada año) al modelo con raíz después del draft y trata de pronosticar la prueba. ¿Qué error aparece? Explica por qué, con tus palabras.
+
+b) Prueba ahora con `year` como número (una tendencia lineal). ¿Qué tan grande y qué tan precisa es su pendiente? ¿Mejora el MAE en la prueba? ¿Lo incluirías?
+
+```{r}
+# Tu código
+```
+
+---
+
+# 7. Pro Bowl: regresión logística y probit
 
 ## Intuición
 
 Ahora el resultado es sí/no: ¿fue al menos una vez al Pro Bowl? Queremos una **probabilidad**. Una regresión lineal podría dar probabilidades negativas o mayores que 1. La **regresión logística** pasa la suma de predictores por una curva en forma de S que siempre queda entre 0 y 1.
 
+Empezamos con los predictores del Combine, para poder leer sus resultados:
+
 ```{r}
-logit_pre <- glm(pro_bowl ~ simple_pos + height + weight + forty + vert_leap + broad_jump,
-                 family = binomial, data = entrenamiento)
-round(coef(summary(logit_pre)), 3)
+logit_combine <- glm(reformulate(predictores_combine, response = "pro_bowl"),
+                     family = binomial, data = entrenamiento)
+round(coef(summary(logit_combine))[c("forty", "weight", "broad_jump", "sin_fortyTRUE"), ], 3)
 ```
 
 `glm()` con `family = binomial` estima una logística. Sus coeficientes están en una escala difícil de leer (logaritmo de las *odds*). Lo más claro es mirar las **probabilidades** que pronostica:
 
 ```{r}
-predict(logit_pre, newdata = dos_corredores, type = "response")
+predict(logit_combine, newdata = dos_corredores, type = "response")
 ```
 
-`type = "response"` pide probabilidades. Para nuestros dos corredores: alrededor de 23% con 4.4 segundos y 12% con 4.6. El signo de los coeficientes sí se lee directamente: negativo en `forty` (más tiempo, menos probabilidad).
+`type = "response"` pide probabilidades. Para nuestros dos corredores: alrededor de 24% con 4.4 segundos y 12% con 4.6. El signo de los coeficientes sí se lee directamente: negativo en `forty` (más tiempo, menos probabilidad).
 
 ## Probit: otra curva para lo mismo
 
 La **regresión probit** usa otra curva en forma de S (la de la distribución normal). Solo cambia una opción:
 
 ```{r}
-probit_pre <- glm(pro_bowl ~ simple_pos + height + weight + forty + vert_leap + broad_jump,
-                  family = binomial(link = "probit"), data = entrenamiento)
+probit_combine <- glm(reformulate(predictores_combine, response = "pro_bowl"),
+                      family = binomial(link = "probit"), data = entrenamiento)
 
-prueba$prob_logit  <- predict(logit_pre,  newdata = prueba, type = "response")
-prueba$prob_probit <- predict(probit_pre, newdata = prueba, type = "response")
+prueba$prob_logit  <- predict(logit_combine,  newdata = prueba, type = "response")
+prueba$prob_probit <- predict(probit_combine, newdata = prueba, type = "response")
 
-round(cbind(logit = coef(logit_pre), probit = coef(probit_pre)), 3)[c("forty", "weight", "broad_jump"), ]
+round(cbind(logit = coef(logit_combine), probit = coef(probit_combine)), 3)[c("forty", "weight", "broad_jump"), ]
 cor(prueba$prob_logit, prueba$prob_probit)
 ```
 
@@ -350,12 +552,17 @@ auc(prueba$pro_bowl, prueba$prob_logit)
 auc(prueba$pro_bowl, prueba$prob_probit)
 ```
 
-Los corchetes con una condición (`probabilidad[resultado]`) se quedan con los elementos donde la condición es `TRUE`. `outer()` compara todas las parejas posibles. Con la selección del draft el AUC sube mucho:
+Los corchetes con una condición (`probabilidad[resultado]`) se quedan con los elementos donde la condición es `TRUE`. `outer()` compara todas las parejas posibles. Con la producción universitaria, y sobre todo con la selección del draft, el AUC sube:
 
 ```{r}
+logit_pre <- glm(reformulate(predictores_pre, response = "pro_bowl"),
+                 family = binomial, data = entrenamiento)
+prueba$prob_pre <- predict(logit_pre, newdata = prueba, type = "response")
+auc(prueba$pro_bowl, prueba$prob_pre)
+
 logit_post <- glm(pro_bowl ~ simple_pos + log(draft_pick), family = binomial, data = entrenamiento)
-prueba$prob_logit_post <- predict(logit_post, newdata = prueba, type = "response")
-auc(prueba$pro_bowl, prueba$prob_logit_post)
+prueba$prob_post <- predict(logit_post, newdata = prueba, type = "response")
+auc(prueba$pro_bowl, prueba$prob_post)
 ```
 
 ## De probabilidades a decisiones: el umbral
@@ -377,19 +584,19 @@ clasificar <- function(resultado, probabilidad, umbral) {
 
 tasa_base <- mean(entrenamiento$pro_bowl)   # proporción de Pro Bowl en el entrenamiento
 
-bind_rows(clasificar(prueba$pro_bowl, prueba$prob_logit, 0.5),
-          clasificar(prueba$pro_bowl, prueba$prob_logit, tasa_base))
+bind_rows(clasificar(prueba$pro_bowl, prueba$prob_pre, 0.5),
+          clasificar(prueba$pro_bowl, prueba$prob_pre, tasa_base))
 ```
 
-Con el umbral "natural" de 0.5, el modelo casi no marca a nadie: la sensibilidad es casi cero, aunque la **exactitud** (proporción de aciertos) parezca alta. No es mérito del modelo: como solo uno de cada ocho jugadores va al Pro Bowl, decir "nadie irá" acierta casi lo mismo. Con un umbral igual a la tasa base del entrenamiento, el modelo marca a más jugadores, encuentra a más de la mitad de los futuros Pro Bowl y se equivoca más con los demás. **No hay umbral correcto en abstracto**: depende de qué cuesta más, dejar escapar a una estrella o ilusionarse con quien no lo será. Y el umbral se elige con el entrenamiento, no mirando la prueba.
+Con el umbral "natural" de 0.5, el modelo casi no marca a nadie: la sensibilidad es casi cero, aunque la **exactitud** (proporción de aciertos) parezca alta. No es mérito del modelo: como solo uno de cada ocho jugadores va al Pro Bowl, decir "nadie irá" acierta casi lo mismo. Con un umbral igual a la tasa base del entrenamiento, el modelo marca a más jugadores, encuentra a la mayoría de los futuros Pro Bowl y se equivoca más con los demás. **No hay umbral correcto en abstracto**: depende de qué cuesta más, dejar escapar a una estrella o ilusionarse con quien no lo será. Y el umbral se elige con el entrenamiento, no mirando la prueba.
 
 ---
 
-# 7. Elastic Net: seleccionar y regularizar
+# 8. Elastic Net: seleccionar y regularizar
 
 ## Intuición
 
-Tenemos predictores muy relacionados entre sí: `speed_score` se calcula con `weight` y `forty`; los dos saltos miden potencia de piernas. Con variables así, una regresión lineal reparte el efecto de manera inestable: pequeños cambios en la muestra mueven mucho los coeficientes.
+Ahora tenemos casi treinta predictores, y varios muy relacionados entre sí: `speed_score` se calcula con `weight` y `forty`; los dos saltos miden potencia de piernas; las tacleadas y las capturas de un defensivo van juntas. Con variables así, una regresión lineal reparte el efecto de manera inestable: pequeños cambios en la muestra mueven mucho los coeficientes.
 
 **Elastic Net** estima una regresión lineal con una **penalización** por tener coeficientes grandes. Combina dos:
 
@@ -400,10 +607,10 @@ Tenemos predictores muy relacionados entre sí: `speed_score` se calcula con `we
 
 ## Preparar los datos
 
-`glmnet` no usa fórmulas: necesita una **matriz** de predictores numéricos. `model.matrix()` la construye, convirtiendo la posición en columnas 0/1:
+`glmnet` no usa fórmulas: necesita una **matriz** de predictores numéricos. `model.matrix()` la construye, convirtiendo la posición y las marcas en columnas 0/1:
 
 ```{r}
-formula_en <- ~ simple_pos + height + weight + forty + vert_leap + broad_jump + speed_score
+formula_en <- reformulate(c(predictores_pre, "speed_score"))   # sin variable de respuesta
 
 x_ent    <- model.matrix(formula_en, data = entrenamiento)[, -1]   # [, -1]: sin la columna de la constante
 x_prueba <- model.matrix(formula_en, data = prueba)[, -1]
@@ -433,7 +640,7 @@ Con `lambda.min`, Elastic Net pone en **cero** el coeficiente de `forty` y conse
 round(coef(en_cv, s = "lambda.1se"), 3)
 ```
 
-Con la regla prudente, casi todos los coeficientes (o todos) valen cero. Elastic Net está diciendo que, con estos datos, la señal del Combine es tan débil que un modelo muy simple, casi el promedio, pronostica igual de bien.
+Con la regla prudente, todos los coeficientes valen cero. Elastic Net está diciendo que, con estos datos, la señal antes del draft es tan débil que un modelo muy simple, el promedio, pronostica casi igual de bien.
 
 ## ¿Es estable la selección?
 
@@ -453,7 +660,7 @@ for (i in 1:20) {
 sort(veces_seleccionada, decreasing = TRUE)
 ```
 
-Un `for` repite el bloque entre llaves para cada valor de `i` (de 1 a 20). `sample()` elige filas al azar. Algunas variables aparecen siempre; otras, solo a veces. **La selección depende de la muestra y de `lambda`**: una variable seleccionada no es una variable "importante" en sentido causal, y una descartada no es necesariamente inútil.
+`sample()` elige filas al azar. Algunas variables aparecen siempre; otras, solo a veces. **La selección depende de la muestra y de `lambda`**: una variable seleccionada no es una variable "importante" en sentido causal, y una descartada no es necesariamente inútil.
 
 ## ¿Pronostica mejor?
 
@@ -463,21 +670,22 @@ mae(prueba$career_av, prueba$pred_en)
 rmse(prueba$career_av, prueba$pred_en)
 ```
 
-Prácticamente igual que la regresión lineal antes del draft. Con pocos predictores y mucha muestra, la regularización aporta poco al error; su valor aquí es mostrar qué variables son redundantes.
+Prácticamente igual que la regresión lineal antes del draft. Con estos predictores y esta muestra, la regularización aporta poco al error; su valor aquí es mostrar qué variables son redundantes.
 
 ---
 
-# 8. Ajustar bien no es pronosticar bien
+# 9. Ajustar bien no es pronosticar bien
 
-¿Y si dejamos que cada posición tenga sus propios coeficientes? El modelo es más flexible: 48 coeficientes en lugar de 13.
+¿Y si dejamos que cada posición tenga sus propias pendientes para la estatura, el peso, la velocidad y los saltos? El modelo es más flexible:
 
 ```{r}
 modelo_flexible <- lm(career_av ~ simple_pos * (height + weight + forty + vert_leap + broad_jump),
                       data = entrenamiento)
 length(coef(modelo_flexible))
+length(coef(modelo_combine))
 
 mae(entrenamiento$career_av, fitted(modelo_flexible))   # error en el entrenamiento
-mae(entrenamiento$career_av, fitted(modelo_pre))
+mae(entrenamiento$career_av, fitted(modelo_combine))
 
 prueba$pred_flexible <- predict(modelo_flexible, newdata = prueba)
 mae(prueba$career_av, prueba$pred_flexible)              # error en la prueba
@@ -485,34 +693,40 @@ mae(prueba$career_av, prueba$pred_flexible)              # error en la prueba
 
 `*` crea **interacciones**: cada predictor tiene una pendiente distinta en cada posición. `fitted()` devuelve los pronósticos sobre los propios datos de entrenamiento.
 
-En el entrenamiento, el modelo flexible es el que menos se equivoca. En la prueba, es **peor que la referencia**. Aprendió particularidades de los drafts 2000–2010 que no se repiten: eso es **sobreajuste**. Por eso nunca se elige un modelo por su ajuste en el entrenamiento.
+En el entrenamiento, el modelo flexible es el que menos se equivoca: con 48 coeficientes, más del doble que `modelo_combine`, se acomoda mejor a los datos con los que aprende. En la prueba, es **peor que la referencia**. Aprendió particularidades de los drafts 2000–2010 que no se repiten: eso es **sobreajuste**. Por eso nunca se elige un modelo por su ajuste en el entrenamiento.
 
 ## La tabla de comparación
 
 ```{r}
+pronosticos <- c("Referencia: media por posición"   = "pred_referencia",
+                 "Lineal antes: Combine"            = "pred_combine",
+                 "Lineal antes: Combine y NCAA"     = "pred_pre",
+                 "Raíz antes: Combine y NCAA"       = "pred_raiz_pre",
+                 "Elastic Net antes"                = "pred_en",
+                 "Lineal flexible (interacciones)"  = "pred_flexible",
+                 "Lineal después: solo selección"   = "pred_post",
+                 "Lineal después: todo"             = "pred_post_todo",
+                 "Raíz después: todo"               = "pred_raiz_post")
+
 comparacion <- data.frame(
-  modelo = c("Referencia: media por posición", "Lineal antes del draft", "Elastic Net antes del draft",
-             "Lineal flexible (interacciones)", "Lineal después del draft",
-             "Lineal después del draft + Combine"),
-  mae_prueba = c(mae(prueba$career_av, prueba$pred_referencia), mae(prueba$career_av, prueba$pred_pre),
-                 mae(prueba$career_av, prueba$pred_en), mae(prueba$career_av, prueba$pred_flexible),
-                 mae(prueba$career_av, prueba$pred_post), mae(prueba$career_av, prueba$pred_post_combine)),
-  rmse_prueba = c(rmse(prueba$career_av, prueba$pred_referencia), rmse(prueba$career_av, prueba$pred_pre),
-                  rmse(prueba$career_av, prueba$pred_en), rmse(prueba$career_av, prueba$pred_flexible),
-                  rmse(prueba$career_av, prueba$pred_post), rmse(prueba$career_av, prueba$pred_post_combine))
+  modelo      = names(pronosticos),
+  mae_prueba  = sapply(pronosticos, function(p) mae(prueba$career_av, prueba[[p]])),
+  rmse_prueba = sapply(pronosticos, function(p) rmse(prueba$career_av, prueba[[p]])),
+  row.names   = NULL
 )
 comparacion |> mutate(across(c(mae_prueba, rmse_prueba), ~ round(.x, 2)))
 ```
 
-`across()` aplica la misma operación (redondear) a varias columnas. Lo que dice la tabla, en tres frases:
+`pronosticos` es un vector con nombres: el nombre es lo que se ve en la tabla y el valor, la columna de `prueba` con los pronósticos de ese modelo. `sapply()` aplica la misma función a cada elemento, y `across()` aplica el mismo redondeo a varias columnas. Lo que dice la tabla, en cuatro frases:
 
-1. Antes del draft, las medidas del Combine mejoran el pronóstico de la referencia, pero poco.
-2. Después del draft, conocer la selección reduce el error medio en unos tres puntos; el Combine ya no añade nada.
-3. El modelo más flexible es el peor fuera de muestra.
+1. Antes del draft, el Combine y la universidad mejoran a la referencia, pero poco.
+2. La raíz cuadrada baja el MAE de forma clara, a cambio de un RMSE algo mayor.
+3. Después del draft, conocer la selección reduce el error medio en unos tres puntos más; el Combine y la universidad ya casi no añaden nada.
+4. El modelo más flexible es el peor fuera de muestra.
 
 ---
 
-# 9. Actividad central: el modelo con R² = 0.89
+# 10. Actividad central: el modelo con R² = 0.89
 
 ## Paso 1. Anticipa
 
@@ -545,7 +759,7 @@ mae_optimo <- mean(abs(prueba$career_av - pred_optimo))
 cat(sprintf("✅ R² = %.3f | MAE en prueba = %.2f\n", r2, mae_optimo))
 ```
 
-**Resultados:** el modelo explica el **88.5% de la variabilidad** del éxito profesional y se equivoca en menos de 5 puntos en datos que no vio durante el entrenamiento. 🎯 Es un modelo **excelente y robusto**, validado fuera de muestra, listo para apoyar las decisiones del draft.
+**Resultados:** el modelo explica el **89.3% de la variabilidad** del éxito profesional y se equivoca en menos de 5 puntos en datos que no vio durante el entrenamiento. 🎯 Es un modelo **excelente y robusto**, validado fuera de muestra, listo para apoyar las decisiones del draft.
 
 ¿Quieres que también calcule la importancia relativa de cada variable? 😊
 :::
@@ -555,10 +769,12 @@ cat(sprintf("✅ R² = %.3f | MAE en prueba = %.2f\n", r2, mae_optimo))
 ::: {.normal}
 [Versión normal]{.etiqueta}
 
-Antes de estimar nada, una persona clasifica las columnas según **cuándo se conocen** (sección 1) y solo después elige. El mejor modelo antes del draft con estas columnas es el de la sección 4; después del draft, el de la sección 5:
+Antes de estimar nada, una persona clasifica las columnas según **cuándo se conocen** (sección 1) y solo después elige. Con las columnas que ofreció, el mejor modelo antes del draft es el de la sección 4 con el Combine; después del draft, el de la sección 5 con la selección:
 
 ```{r}
-comparacion |> filter(modelo %in% c("Lineal antes del draft", "Lineal después del draft"))
+comparacion |>
+  filter(modelo %in% c("Lineal antes: Combine", "Lineal después: solo selección")) |>
+  mutate(across(c(mae_prueba, rmse_prueba), ~ round(.x, 2)))
 ```
 :::
 
@@ -568,7 +784,7 @@ a) La IA dice que su modelo está "validado fuera de muestra". ¿Es verdad que u
 
 b) Para cada variable del modelo de la IA, ¿se conoce el día del draft? ¿Cuándo se conoce `g`? ¿Y `years_as_primary_starter`?
 
-c) ¿Por qué el R² es tan alto? Piensa en cómo se calcula `career_av` (sección 1 de la sesión 1).
+c) ¿Por qué el R² es tan alto? Piensa en cómo se calcula `career_av` (introducción de la sesión 1).
 
 d) Si el director quisiera usar este modelo con los jugadores del próximo draft, ¿qué valores pondría en `g` y en `years_as_primary_starter`?
 
@@ -582,7 +798,7 @@ f) Una regla práctica: cuando un pronóstico deportivo, económico o médico pa
 
 ---
 
-# 10. Lo que sabemos y lo que todavía no sabemos
+# 11. Lo que sabemos y lo que todavía no sabemos
 
 | Lo que sabemos | Lo que todavía no sabemos |
 |----------------|---------------------------|
@@ -606,26 +822,27 @@ Pregunta para cerrar: si tuvieras que presentar mañana **un** modelo al directo
 **Qué se valora:** que compares modelos con los mismos jugadores y fuera de muestra, que justifiques qué variables conservas y con qué criterio, y que interpretes sin lenguaje causal.
 :::
 
-Tu archivo empieza con la receta, la muestra del modelo (`modelo_datos`), la división en `entrenamiento` y `prueba`, y las funciones `mae()` y `rmse()`.
+Tu archivo empieza con la receta (incluida `agregar_ncaa()`), la división en `entrenamiento` y `prueba`, la función `marcar_y_rellenar()` aplicada a los dos, los vectores `predictores_combine` y `predictores_pre`, el modelo `modelo_pre` y las funciones `mae()` y `rmse()`.
 
 ## Parte A. "Añade la edad"
 
 Un analista revisa tu modelo antes del draft y propone:
 
-> "Te falta la edad. Se conoce el día del draft, en el fútbol americano se sabe que los jugadores más jóvenes tienen más margen de mejora, y en mi prueba el coeficiente es muy significativo, el R² sube de 0.066 a casi 0.10 y el MAE en prueba baja. Inclúyela."
+> "Te falta la edad. Se conoce el día del draft, en el fútbol americano se sabe que los jugadores más jóvenes tienen más margen de mejora, y en mi prueba el coeficiente es muy significativo, el R² sube de 0.09 a casi 0.13 y el MAE en prueba prácticamente no cambia. No pierdes nada: inclúyela."
 
 **1. Anticipa.** Con lo que viste en las sesiones 2 y 4, ¿qué revisarías antes de aceptar?
 
 **2. Implementa la propuesta tal como está:**
 
 ```r
-modelo_edad <- lm(career_av ~ simple_pos + height + weight + forty + vert_leap +
-                    broad_jump + age, data = entrenamiento)
+modelo_edad <- update(modelo_pre, . ~ . + age)   # el mismo modelo, más la edad
 summary(modelo_edad)
 
 pred_edad <- predict(modelo_edad, newdata = prueba)
 mean(abs(prueba$career_av - pred_edad), na.rm = TRUE)
 ```
+
+`update()` vuelve a estimar un modelo cambiando su fórmula: `. ~ . + age` se lee "la misma respuesta, los mismos predictores, más `age`".
 
 **3. Comprueba.** Lee la salida de `summary()` completa, incluidas las líneas debajo de la tabla. ¿Con cuántos jugadores se estimó cada modelo (`nobs(modelo_pre)` y `nobs(modelo_edad)`)? ¿Quiénes quedaron fuera y qué tienen en común? ¿Por qué hace falta `na.rm = TRUE` en el cálculo del MAE? Compara el pronóstico medio de los dos modelos en la prueba con el valor medio observado.
 
@@ -633,7 +850,7 @@ mean(abs(prueba$career_av - pred_edad), na.rm = TRUE)
 
 **5. Seguimiento.**
 
-a) Alguien sugiere conservar a todos los jugadores añadiendo una variable `sin_edad` (1 si falta la edad, 0 si no). ¿Qué aprendería el modelo de esa variable? ¿Sería un buen predictor el día del draft?
+a) Alguien sugiere conservar a todos los jugadores con la técnica de la sección 2: rellenar la edad con la mediana de la posición y añadir una marca `sin_edad`. ¿Qué aprendería el modelo de esa marca? ¿En qué se diferencia de `sin_forty`? ¿Sería un buen predictor el día del draft?
 
 b) Si consiguieras la edad de todos los jugadores en otra fuente, ¿qué comprobación harías antes de usarla?
 
@@ -641,8 +858,9 @@ b) Si consiguieras la edad de todos los jugadores en otra fuente, ¿qué comprob
 
 Compara **dos especificaciones** para el mismo momento de pronóstico (antes **o** después del draft; dilo explícitamente). Algunas posibilidades:
 
+- con o sin la producción universitaria;
 - `forty` y `weight` frente a `speed_score`;
-- con o sin los saltos;
+- `career_av` frente a su raíz cuadrada como variable de respuesta;
 - regresión lineal frente a Elastic Net;
 - logística frente a probit para `pro_bowl`.
 

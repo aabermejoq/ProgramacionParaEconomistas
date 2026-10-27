@@ -72,7 +72,7 @@ Para cada pregunta harás dos versiones con los mismos datos:
 
 # 0. Preparación
 
-La receta de la sesión 1, más el paquete `ggplot2`:
+La receta de las sesiones 1 y 2, más el paquete `ggplot2`:
 
 ```{r receta}
 library(dplyr)
@@ -80,8 +80,9 @@ library(ggplot2)
 
 url_datos <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
                     "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
-nfl <- tryCatch(read.csv(url_datos, sep = ";", na.strings = ""),
-                error = function(e) read.csv("datos/nfl_data.csv", sep = ";", na.strings = ""))
+nfl <- tryCatch(read.csv(url_datos, sep = ";", na.strings = "", encoding = "UTF-8"),
+                error = function(e) read.csv("datos/nfl_data.csv", sep = ";", na.strings = "",
+                                             encoding = "UTF-8"))
 
 tags_repetidos <- nfl$tag[duplicated(nfl$tag)]   # nombre + universidad repetidos
 
@@ -100,9 +101,30 @@ base <- nfl |>
   select(player_id, name, college, year, pos, simple_pos, draft_round, draft_pick, age,
          height, weight, hand_size, arm_length, forty, vert_leap, broad_jump,
          bench_press, shuttle, speed_score,
-         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo)
+         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo,
+         college_games, college_pass_yds, college_pass_td, college_rush_yds,
+         college_rec_yds, college_tackles, college_sacks, college_ints)
 
 if (nrow(base) != 3197) warning("La base no tiene 3,197 jugadores: revisa la receta.")
+
+# Producción universitaria (sesión 2)
+defensa <- c("DL", "LB", "DB")
+
+agregar_ncaa <- function(datos) {
+  datos |>
+    mutate(
+      ncaa_yardas_pase      = ifelse(simple_pos == "QB", log1p(pmax(college_pass_yds, 0)), 0),
+      ncaa_td_pase          = ifelse(simple_pos == "QB", log1p(college_pass_td), 0),
+      ncaa_yardas_tierra    = ifelse(simple_pos == "RB", log1p(pmax(college_rush_yds, 0)), 0),
+      ncaa_yardas_recepcion = ifelse(simple_pos %in% c("WR", "TE"), log1p(pmax(college_rec_yds, 0)), 0),
+      ncaa_tacleadas        = ifelse(simple_pos %in% defensa, log1p(college_tackles), 0),
+      ncaa_capturas         = ifelse(simple_pos %in% defensa, log1p(college_sacks), 0),
+      ncaa_intercepciones   = ifelse(simple_pos %in% defensa, log1p(college_ints), 0),
+      ncaa_partidos         = college_games
+    )
+}
+
+base <- agregar_ncaa(base)
 ```
 
 Dos objetos que usarán las versiones B: los nombres de las posiciones en español y un estilo común para todas las gráficas.
@@ -297,7 +319,7 @@ grafica_3b
 
 ## Una función propia
 
-Queremos la correlación de ocho variables con `career_av`, primero en toda la base y luego por posición. Copiar ocho veces el mismo cálculo invita a errores. Una **función** guarda el cálculo una vez:
+Queremos la correlación de ocho variables con `career_av`, primero en toda la base y luego por posición. Copiar ocho veces el mismo cálculo invita a errores. Una **función** guarda el cálculo una vez. En la sesión 2 leíste una, `agregar_ncaa()`; ahora escribes la tuya:
 
 ```{r}
 correlacion_con_exito <- function(datos, variable) {
@@ -507,6 +529,28 @@ Para cada gráfica:
 3. Explica en dos o tres frases **qué se puede concluir** y **qué no** (por ejemplo, causalidad, generalización a otros jugadores, tamaño de la relación).
 4. Guárdala con `ggsave()` en una carpeta `graficas/`.
 
+## Parte C (opcional). Las dos primeras gráficas de la portada
+
+En la portada de la sesión 1 viste tres gráficas que resumen la historia del curso. Reproduce **la primera, la segunda o las dos**. No cuenta como una de tus cuatro gráficas de la parte B: es un reto adicional.
+
+Una diferencia importante con todo lo que hiciste hasta ahora: estas gráficas **no usan `base`**. La primera incluye a los jugadores no elegidos y las dos empiezan en 1987. Parte de `nfl`, escribe tu propio filtro y anota cuántos jugadores quedan y por qué.
+
+**Gráfica 2: número de selección y valor de carrera.** Es la más sencilla; empieza por ella.
+
+- Jugadores elegidos entre 1987 y 2014, sin equipos especiales ni `tag` repetidos. Los que nunca jugaron valen 0.
+- Una capa de puntos con transparencia y otra con el promedio de cada grupo de 8 selecciones: `floor((draft_pick - 1) / 8)` da el número de grupo de cada jugador.
+- Marca a Tom Brady y a Peyton Manning con `geom_text()`, usando una tabla que tenga solo esas dos filas.
+
+**Gráfica 1: resultado en el Combine y ronda en que se elige.**
+
+- Todos los participantes del Combine entre 1987 y 2014, elegidos o no, sin equipos especiales ni `tag` repetidos.
+- Normaliza cada prueba (40 yardas, press de banca, salto vertical, salto largo y *shuttle*) frente a los jugadores de su misma posición y año: (valor − media) / desviación estándar, con `group_by(simple_pos, year)` y `mutate()`.
+- Cambia el signo de las pruebas de tiempo (40 yardas y *shuttle*) para que más sea siempre mejor, y promedia las pruebas que hizo cada jugador con `rowMeans(..., na.rm = TRUE)`. ¿Qué pasa con quien no hizo ninguna?
+- Reparte a los jugadores en 10 grupos con `ntile()` y calcula, en cada grupo, el porcentaje elegido en cada ronda (junta en una sola categoría las rondas 7 a 12, que solo existieron hasta 1993) y el porcentaje de no elegidos.
+- Un panel por ronda con `facet_wrap()`.
+
+En los dos casos, escribe qué decisiones tuviste que tomar que la portada no explica, y si tus cifras coinciden con las de la portada. Si no coinciden, busca por qué antes de darlas por buenas.
+
 ## Bitácora y GitHub
 
 Al final, una sección `# Bitácora` con las cinco partes de siempre (qué querías averiguar, qué hiciste, qué comprobaste, qué decidiste y descartaste, cómo usaste la IA si la usaste).
@@ -526,3 +570,4 @@ Al final, una sección `# Bitácora` con las cinco partes de siempre (qué quer�
 | Interpretación | Distingues lo que se puede y lo que no se puede concluir; no hay lenguaje causal |
 | Reproducibilidad | El archivo compila solo; las imágenes están en el repositorio |
 | Trazabilidad | Bitácora completa, mensajes de cambio descriptivos, `notas.md` actualizado |
+| Parte C (opcional, puntos extra) | La gráfica reproduce la de la portada, el filtro está justificado y explicas cualquier diferencia en las cifras |

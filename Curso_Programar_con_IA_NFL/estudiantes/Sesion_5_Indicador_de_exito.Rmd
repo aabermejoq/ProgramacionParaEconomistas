@@ -80,8 +80,9 @@ library(ggplot2)
 
 url_datos <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
                     "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
-nfl <- tryCatch(read.csv(url_datos, sep = ";", na.strings = ""),
-                error = function(e) read.csv("datos/nfl_data.csv", sep = ";", na.strings = ""))
+nfl <- tryCatch(read.csv(url_datos, sep = ";", na.strings = "", encoding = "UTF-8"),
+                error = function(e) read.csv("datos/nfl_data.csv", sep = ";", na.strings = "",
+                                             encoding = "UTF-8"))
 
 tags_repetidos <- nfl$tag[duplicated(nfl$tag)]   # nombre + universidad repetidos
 
@@ -100,14 +101,55 @@ base <- nfl |>
   select(player_id, name, college, year, pos, simple_pos, draft_round, draft_pick, age,
          height, weight, hand_size, arm_length, forty, vert_leap, broad_jump,
          bench_press, shuttle, speed_score,
-         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo)
+         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo,
+         college_games, college_pass_yds, college_pass_td, college_rush_yds,
+         college_rec_yds, college_tackles, college_sacks, college_ints)
 
 if (nrow(base) != 3197) warning("La base no tiene 3,197 jugadores: revisa la receta.")
 
-# Muestra del modelo y división temporal (sesión 4)
-modelo_datos  <- base |> filter(!is.na(forty), !is.na(vert_leap), !is.na(broad_jump))
-entrenamiento <- modelo_datos |> filter(year <= 2010)
-prueba        <- modelo_datos |> filter(year >= 2011)
+# Producción universitaria (sesión 2)
+defensa <- c("DL", "LB", "DB")
+
+agregar_ncaa <- function(datos) {
+  datos |>
+    mutate(
+      ncaa_yardas_pase      = ifelse(simple_pos == "QB", log1p(pmax(college_pass_yds, 0)), 0),
+      ncaa_td_pase          = ifelse(simple_pos == "QB", log1p(college_pass_td), 0),
+      ncaa_yardas_tierra    = ifelse(simple_pos == "RB", log1p(pmax(college_rush_yds, 0)), 0),
+      ncaa_yardas_recepcion = ifelse(simple_pos %in% c("WR", "TE"), log1p(pmax(college_rec_yds, 0)), 0),
+      ncaa_tacleadas        = ifelse(simple_pos %in% defensa, log1p(college_tackles), 0),
+      ncaa_capturas         = ifelse(simple_pos %in% defensa, log1p(college_sacks), 0),
+      ncaa_intercepciones   = ifelse(simple_pos %in% defensa, log1p(college_ints), 0),
+      ncaa_partidos         = college_games
+    )
+}
+
+base <- agregar_ncaa(base)
+
+# División temporal y faltantes: marcar y rellenar con medianas del entrenamiento (sesión 4)
+pruebas           <- c("forty", "vert_leap", "broad_jump", "bench_press", "shuttle")
+estadisticas_ncaa <- c("ncaa_yardas_pase", "ncaa_td_pase", "ncaa_yardas_tierra",
+                       "ncaa_yardas_recepcion", "ncaa_tacleadas", "ncaa_capturas",
+                       "ncaa_intercepciones")
+
+marcar_y_rellenar <- function(datos, aprende) {
+  datos <- datos |>
+    mutate(across(all_of(pruebas), is.na, .names = "sin_{.col}"),
+           sin_ncaa     = if_any(all_of(estadisticas_ncaa), is.na),
+           sin_partidos = is.na(ncaa_partidos))
+  for (v in c(pruebas, estadisticas_ncaa, "ncaa_partidos")) {
+    medianas <- tapply(aprende[[v]], aprende$simple_pos, median, na.rm = TRUE)
+    datos[[v]] <- ifelse(is.na(datos[[v]]), medianas[datos$simple_pos], datos[[v]])
+  }
+  datos |> mutate(speed_score = weight * 200 / forty^4)
+}
+
+entrenamiento <- base |> filter(year <= 2010)
+prueba        <- base |> filter(year >= 2011) |> marcar_y_rellenar(aprende = entrenamiento)
+entrenamiento <- entrenamiento |> marcar_y_rellenar(aprende = entrenamiento)
+
+predictores_combine <- c("simple_pos", "height", "weight", pruebas, paste0("sin_", pruebas))
+predictores_pre     <- c(predictores_combine, estadisticas_ncaa, "ncaa_partidos", "sin_ncaa", "sin_partidos")
 
 mae  <- function(observado, pronostico) mean(abs(observado - pronostico))
 rmse <- function(observado, pronostico) sqrt(mean((observado - pronostico)^2))
@@ -115,9 +157,13 @@ rmse <- function(observado, pronostico) sqrt(mean((observado - pronostico)^2))
 estilo <- theme_minimal(base_size = 12) +
   theme(plot.title = element_text(face = "bold"), plot.title.position = "plot",
         plot.subtitle = element_text(color = "#52514e"),
-        plot.caption = element_text(color = "#898781"), panel.grid.minor = element_blank())
-fuente <- "Datos: phcs971/nfl-draft-dataset (Combine, draft y Pro Football Reference)."
+        plot.caption = element_text(color = "#898781", hjust = 0), plot.caption.position = "plot",
+        panel.grid.minor = element_blank(), strip.text = element_text(face = "bold", hjust = 0),
+        legend.position = "top", legend.justification = "left")
+fuente <- "Datos: phcs971/nfl-draft-dataset (Combine, draft, Pro Football Reference y Sports Reference)."
 ```
+
+Al usar `|>` con `marcar_y_rellenar()`, la tabla de la izquierda entra como primer argumento (`datos`). La prueba se prepara antes que el entrenamiento, para que las medianas salgan de los datos originales del entrenamiento.
 
 ---
 
@@ -127,26 +173,30 @@ Este ejemplo es el esqueleto de un proyecto completo. Tu proyecto debe tener las
 
 ## 1.1 Pregunta de pronóstico
 
-> Con las medidas físicas y atléticas que se conocen antes del draft, ¿cuánto valor de carrera (`career_av`) cabe esperar de un jugador que será elegido? Como comparación: ¿cuánto mejora el pronóstico si además se conoce su número de selección?
+> Con lo que se sabe de un jugador antes del draft (su posición, sus medidas y pruebas en el Combine y su producción universitaria), ¿qué valor de carrera (`career_av`) es razonable pronosticarle? Como comparación: ¿cuánto mejora el pronóstico si además se conoce su número de selección?
 
-La pregunta fija el **momento** del pronóstico (antes del draft), la **población** (jugadores que serán elegidos y que pasaron por el Combine) y el **resultado** (valor de carrera).
+La pregunta fija el **momento** del pronóstico (antes del draft), la **población** (jugadores que serán elegidos) y el **resultado** (valor de carrera).
 
 ## 1.2 Variable de éxito
 
-`career_av`: valor aproximado acumulado en la carrera, según Pro Football Reference. Se eligió porque es continua, existe para todos los jugadores elegidos y está pensada para comparar posiciones. Los jugadores elegidos que nunca jugaron cuentan como 0. Solo se usan drafts hasta 2014 para que todas las carreras hayan tenido al menos diez temporadas. Su distribución es muy asimétrica (mediana 8, media 18): los errores más grandes estarán en las estrellas.
+`career_av`: valor aproximado acumulado en la carrera, según Pro Football Reference. Se eligió porque es continua, existe para todos los jugadores elegidos y está pensada para comparar posiciones. Los jugadores elegidos que nunca jugaron cuentan como 0. Solo se usan drafts hasta 2014 para que todas las carreras hayan tenido al menos diez temporadas. Su distribución es muy asimétrica (mediana 8, media 18), así que el modelo principal pronostica su **raíz cuadrada** y el pronóstico se devuelve a puntos elevándolo al cuadrado (sesión 4).
 
 ## 1.3 Base y limpieza
 
 ```{r}
 data.frame(
   paso = c("Archivo completo", "Elegidos en el draft 2000-2014, sin equipos especiales ni tags repetidos",
-           "Con 40 yardas, salto vertical y salto largo", "Entrenamiento (drafts 2000-2010)",
-           "Prueba (drafts 2011-2014)"),
-  jugadores = c(nrow(nfl), nrow(base), nrow(modelo_datos), nrow(entrenamiento), nrow(prueba))
+           "Entrenamiento (drafts 2000-2010)", "Prueba (drafts 2011-2014)",
+           "Jugadores con al menos una prueba del Combine rellenada"),
+  jugadores = c(nrow(nfl), nrow(base), nrow(entrenamiento), nrow(prueba),
+                sum(entrenamiento$sin_forty | entrenamiento$sin_vert_leap | entrenamiento$sin_broad_jump |
+                      entrenamiento$sin_bench_press | entrenamiento$sin_shuttle) +
+                  sum(prueba$sin_forty | prueba$sin_vert_leap | prueba$sin_broad_jump |
+                        prueba$sin_bench_press | prueba$sin_shuttle))
 )
 ```
 
-Decisiones: los elegidos sin carrera registrada valen 0 (nunca jugaron); se excluyen las filas con `tag` repetido porque su carrera pertenece a otra persona; se exige tener tres pruebas, lo que deja fuera a jugadores que en promedio tuvieron carreras peores (limitación).
+Decisiones: los elegidos sin carrera registrada valen 0 (nunca jugaron); se excluyen las filas con `tag` repetido porque su carrera pertenece a otra persona; los faltantes de las pruebas y de las estadísticas universitarias **no** eliminan jugadores: se marcan y se rellenan con la mediana de la posición en el entrenamiento. Así el modelo aprende de todos los elegidos, también de los que no hicieron alguna prueba, que tuvieron carreras peores (sesiones 2 y 4).
 
 ## 1.4 Exploración
 
@@ -158,13 +208,13 @@ bind_rows(entrenamiento |> mutate(conjunto = "entrenamiento"),
             pct_pro_bowl = mean(pro_bowl), pct_nunca_jugo = mean(nunca_jugo))
 ```
 
-Los dos conjuntos se parecen, aunque en la prueba hay algo más de éxito (más Pro Bowl, menos jugadores que nunca jugaron). Conviene recordarlo: el error en la prueba depende también de qué tan difíciles sean esos jugadores. Dentro de cada posición, las medidas más relacionadas con el éxito fueron la velocidad (sola o ajustada por peso) y el salto largo; las correlaciones no pasan de 0.37 en valor absoluto (sesiones 2 y 3).
+Los dos conjuntos se parecen, aunque en la prueba hay algo menos de jugadores que nunca jugaron. Conviene recordarlo: el error en la prueba depende también de qué tan difíciles sean esos jugadores. Dentro de cada posición, las medidas más relacionadas con el éxito fueron la velocidad (sola o ajustada por peso), el salto largo y, en corredores y alas cerradas, la producción universitaria; ninguna correlación pasa de 0.37 en valor absoluto (sesiones 2 y 3).
 
 ## 1.5 Predictores
 
-- **Antes del draft:** posición, estatura, peso, 40 yardas, salto vertical y salto largo.
-- **Después del draft (comparación):** posición y logaritmo del número de selección.
-- **Excluidos:** `bench_press` y `shuttle` (faltan para un tercio y casi todos los QB); `age` (falta justo para quienes nunca jugaron); y toda variable de la carrera profesional (fuga de información).
+- **Antes del draft:** posición, estatura, peso, las cinco pruebas del Combine (40 yardas, salto vertical, salto largo, press de banca y *shuttle*) con sus marcas de faltante, y la producción universitaria según la posición con sus marcas.
+- **Después del draft (comparación):** lo anterior más el logaritmo del número de selección.
+- **Excluidos:** `age` (falta justo para quienes nunca jugaron: su faltante delata el resultado); toda variable de la carrera profesional (fuga de información); las medidas de manos y brazos, que quedan para la variante B del proyecto.
 
 ## 1.6 Modelos
 
@@ -174,72 +224,84 @@ referencia <- entrenamiento |>
   summarise(pred_referencia = mean(career_av))
 prueba <- prueba |> left_join(referencia, by = "simple_pos")
 
-modelo_pre  <- lm(career_av ~ simple_pos + height + weight + forty + vert_leap + broad_jump,
-                  data = entrenamiento)
-modelo_post <- lm(career_av ~ simple_pos + log(draft_pick), data = entrenamiento)
+entrenamiento$raiz_av <- sqrt(pmax(entrenamiento$career_av, 0))
 
-prueba$pred_pre  <- predict(modelo_pre,  newdata = prueba)
-prueba$pred_post <- predict(modelo_post, newdata = prueba)
+lineal_pre <- lm(reformulate(predictores_pre, response = "career_av"), data = entrenamiento)
+raiz_pre   <- lm(reformulate(predictores_pre, response = "raiz_av"), data = entrenamiento)
+raiz_post  <- lm(reformulate(c(predictores_pre, "log(draft_pick)"), response = "raiz_av"),
+                 data = entrenamiento)
+
+prueba$pred_lineal_pre <- predict(lineal_pre, newdata = prueba)
+prueba$pred_raiz_pre   <- pmax(predict(raiz_pre,  newdata = prueba), 0)^2
+prueba$pred_raiz_post  <- pmax(predict(raiz_post, newdata = prueba), 0)^2
 ```
 
-El modelo **principal** es `modelo_pre`: responde la pregunta con características del jugador. `modelo_post` sirve para saber cuánta información hay en la evaluación de los equipos, más allá de las medidas.
+El modelo **principal** es `raiz_pre`: responde la pregunta con lo que se sabe del jugador antes del draft. `lineal_pre` es la alternativa con los mismos predictores sin transformar el resultado. `raiz_post` sirve para saber cuánta información hay en la decisión de los equipos, más allá de las medidas y la universidad.
 
 ## 1.7 Evaluación fuera de muestra
 
 ```{r}
 data.frame(
-  modelo = c("Referencia (media por posición)", "Antes del draft (principal)", "Después del draft"),
-  mae  = c(mae(prueba$career_av, prueba$pred_referencia), mae(prueba$career_av, prueba$pred_pre),
-           mae(prueba$career_av, prueba$pred_post)),
-  rmse = c(rmse(prueba$career_av, prueba$pred_referencia), rmse(prueba$career_av, prueba$pred_pre),
-           rmse(prueba$career_av, prueba$pred_post))
+  modelo = c("Referencia (media por posición)", "Lineal antes del draft",
+             "Raíz antes del draft (principal)", "Raíz después del draft"),
+  mae  = c(mae(prueba$career_av, prueba$pred_referencia), mae(prueba$career_av, prueba$pred_lineal_pre),
+           mae(prueba$career_av, prueba$pred_raiz_pre),   mae(prueba$career_av, prueba$pred_raiz_post)),
+  rmse = c(rmse(prueba$career_av, prueba$pred_referencia), rmse(prueba$career_av, prueba$pred_lineal_pre),
+           rmse(prueba$career_av, prueba$pred_raiz_pre),   rmse(prueba$career_av, prueba$pred_raiz_post))
 ) |> mutate(across(c(mae, rmse), ~ round(.x, 2)))
 ```
 
-Antes del draft, el indicador mejora a la referencia en unas décimas de MAE y en unos 0.7 puntos de RMSE. Después del draft, el error baja unos tres puntos más.
+Antes del draft, el modelo principal baja el MAE de la referencia en unos 2.5 puntos; el RMSE casi no cambia, porque el modelo con raíz falla tanto como los demás con las estrellas. Después del draft, el MAE baja unos dos puntos más.
 
-¿Sirve un indicador que se equivoca, en promedio, por 17 puntos? Depende de para qué. Veamos si al menos **ordena**: dividimos a los jugadores de prueba en cinco grupos según su pronóstico y comparamos lo que pronosticamos con lo que pasó.
+¿Sirve un indicador que se equivoca, en promedio, por casi 15 puntos? Depende de para qué. Veamos si al menos **ordena**: dividimos a los jugadores de prueba en cinco grupos según su pronóstico y comparamos lo que pronosticamos con lo que pasó.
 
 ```{r}
 prueba |>
-  mutate(quintil_pronostico = ntile(pred_pre, 5)) |>
+  mutate(quintil_pronostico = ntile(pred_raiz_pre, 5)) |>
   group_by(quintil_pronostico) |>
-  summarise(jugadores = n(), pronostico_medio = mean(pred_pre),
-            observado_medio = mean(career_av), pct_pro_bowl = mean(pro_bowl))
+  summarise(jugadores = n(), pronostico_medio = mean(pred_raiz_pre),
+            observado_medio = mean(career_av), observado_mediano = median(career_av),
+            pct_pro_bowl = mean(pro_bowl))
 ```
 
-`ntile(x, 5)` reparte a los jugadores en cinco grupos del mismo tamaño, de menor a mayor pronóstico. El quintil más alto acumuló, en promedio, más del doble de valor que el más bajo y llegó al Pro Bowl con mucha más frecuencia. El indicador falla jugador por jugador, pero **ordena grupos**.
+`ntile(x, 5)` reparte a los jugadores en cinco grupos del mismo tamaño, de menor a mayor pronóstico. El quintil más alto acumuló, en promedio, más del triple de valor que el más bajo y llegó al Pro Bowl con una frecuencia cuatro veces mayor. El indicador falla jugador por jugador, pero **ordena grupos**. Fíjate además en que el pronóstico de cada quintil se parece más a la **mediana** observada que a la media: es lo que se espera del modelo con raíz.
 
 ## 1.8 ¿Qué variables parecen informativas?
 
-Los coeficientes están en unidades distintas (libras, segundos, pulgadas). Para compararlos, calculamos cuánto cambia el pronóstico si una variable aumenta en una **desviación estándar** (un cambio "típico" en el entrenamiento), con las demás fijas:
+Los coeficientes están en unidades distintas (libras, segundos, pulgadas, partidos). Para compararlos, calculamos cuánto cambia el pronóstico si una variable aumenta en una **desviación estándar** (un cambio "típico" en el entrenamiento), con las demás fijas. El modelo principal pronostica la raíz, así que el cambio está en esa escala:
 
 ```{r}
-predictores <- c("height", "weight", "forty", "vert_leap", "broad_jump")
+continuas <- c("height", "weight", "forty", "vert_leap", "broad_jump", "bench_press", "shuttle",
+               "ncaa_partidos")
 
-data.frame(variable    = predictores,
-           coeficiente = coef(modelo_pre)[predictores],
-           desv_est    = sapply(entrenamiento[predictores], sd)) |>
-  mutate(cambio_por_1_de = coeficiente * desv_est) |>
-  mutate(across(where(is.numeric), ~ round(.x, 2)))
+data.frame(variable    = continuas,
+           coeficiente = coef(raiz_pre)[continuas],
+           desv_est    = sapply(entrenamiento[continuas], sd)) |>
+  mutate(cambio_en_raiz_por_1_de = coeficiente * desv_est) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3)))
+
+round(coef(raiz_pre)[c("sin_fortyTRUE", "sin_ncaaTRUE", "ncaa_yardas_tierra")], 2)
 ```
 
-`sapply()` aplica una función (aquí, `sd`) a cada columna. Lectura con cuidado:
+`sapply()` aplica una función (aquí, `sd`) a cada columna. Para leer la escala: un jugador con un pronóstico de 9 puntos tiene raíz 3; sumarle 1 a la raíz lo lleva a 16 puntos (4²). Un cambio de 1 en la raíz es grande. Lectura con cuidado:
 
-- **Velocidad y peso juntos.** A igual peso, correr más rápido se asocia con un pronóstico más alto; a igual tiempo, pesar más también. Es la idea del `speed_score`: lo valioso es ser rápido **para tu peso**. Peso y tiempo están muy correlacionados, así que su efecto por separado ("una desviación más de peso sin cambiar el tiempo") describe una combinación poco común.
-- **Salto largo**: aporta algo; el salto vertical, menos.
-- **Estatura**: casi nada, una vez considerada la posición.
-- En la sesión 4, Elastic Net seleccionó de forma estable la posición, el peso, `speed_score` y los saltos, y descartaba `forty` cuando `speed_score` estaba presente: la información de la velocidad es la misma.
+- **Velocidad y peso juntos.** Son los dos cambios más grandes. A igual peso, correr más rápido se asocia con un pronóstico más alto; a igual tiempo, pesar más también. Es la idea del `speed_score`: lo valioso es ser rápido **para tu peso**. Peso y tiempo están muy correlacionados, así que su efecto por separado ("una desviación más de peso sin cambiar el tiempo") describe una combinación poco común.
+- **Partidos universitarios**: el tercero, con signo negativo, como en la sesión 2.
+- **Las marcas también informan**: no haber corrido las 40 yardas o no tener estadísticas universitarias se asocia con pronósticos más bajos.
+- **Saltos, press de banca, *shuttle* y estatura**: cambios pequeños, una vez consideradas la posición, la velocidad y el peso.
+- En la sesión 4, Elastic Net seleccionó de forma estable la posición, el peso, `speed_score` y varias estadísticas universitarias, y descartaba `forty` cuando `speed_score` estaba presente: la información de la velocidad es la misma.
 
 Nada de esto prueba que esas características **causen** el éxito: describen asociaciones que sirvieron para pronosticar en jugadores nuevos.
 
 ## 1.9 Limitaciones y uso
 
-- **Poca capacidad predictiva antes del draft.** El Combine aporta información, pero poca: casi toda la variación del éxito depende de cosas que estas medidas no capturan.
-- **Selección.** Solo vale para jugadores que serán elegidos y que hicieron las pruebas; no dice nada de los no elegidos.
+- **Poca capacidad predictiva antes del draft.** El Combine y la universidad aportan información, pero poca: casi toda la variación del éxito depende de cosas que estas medidas no capturan.
+- **Selección.** Solo vale para jugadores que serán elegidos; no dice nada de los no elegidos.
+- **Faltantes rellenados.** A quien no hizo una prueba se le asigna el valor típico de su posición; su pronóstico se apoya en la marca, no en una medida suya. Las estadísticas universitarias de los defensivos solo existen desde 2006.
+- **Valor típico, no promedio.** El modelo con raíz pronostica algo cercano a la mediana. Si se suman los pronósticos de todo un draft, el total quedará corto frente al valor que de verdad se acumula.
 - **Comparabilidad.** El `career_av` depende de la posición y de la duración de la carrera; la posición está en el modelo, pero las oportunidades de jugar (equipo, lesiones, competencia) no.
 - **Generaciones.** El modelo aprendió con 2000–2010; si la NFL cambia (más pases, nuevas posiciones), las relaciones pueden cambiar.
-- **Uso razonable:** ordenar a los prospectos de una posición y señalar perfiles atléticos poco comunes para revisar con más atención. **Uso no razonable:** decidir a quién elegir con base solo en el indicador, o afirmar que un jugador "valdrá" una cifra concreta.
+- **Uso razonable:** ordenar a los prospectos de una posición y señalar perfiles poco comunes para revisar con más atención. **Uso no razonable:** decidir a quién elegir con base solo en el indicador, o afirmar que un jugador "valdrá" una cifra concreta.
 
 ---
 
@@ -247,44 +309,82 @@ Nada de esto prueba que esas características **causen** el éxito: describen as
 
 ## Cómo se lee
 
-Cada punto es un jugador de prueba: en el eje horizontal, lo que pronosticamos; en el vertical, lo que pasó. La **línea de 45 grados** marca el pronóstico perfecto (observado = pronosticado). Un punto **por encima** de la línea es un jugador que superó el pronóstico; **por debajo**, uno que se quedó corto. La distancia vertical a la línea es el error.
+Cada punto azul es un jugador de prueba: en el eje horizontal, lo que pronosticamos; en el vertical, lo que pasó. La **línea de 45 grados** marca el pronóstico perfecto (observado = pronosticado). Un punto **por encima** de la línea es un jugador que superó el pronóstico; **por debajo**, uno que se quedó corto.
+
+Dos ayudas para leerla:
+
+- **Ejes en escala de raíz cuadrada.** Separan los valores pequeños, donde está la mayoría de los jugadores, y acercan los grandes. La línea de 45 grados sigue siendo el pronóstico perfecto.
+- **Puntos naranjas.** Ordenamos a los jugadores por su pronóstico y los repartimos en diez grupos del mismo tamaño. Para cada grupo, el punto relleno es el promedio de lo que realmente acumularon y el hueco, la mediana. Si el modelo acertara con cada grupo, caerían sobre la línea.
 
 ```{r}
 resultados <- bind_rows(
-  prueba |> mutate(pronostico = pred_pre,  momento = "Antes del draft: posición y Combine"),
-  prueba |> mutate(pronostico = pred_post, momento = "Después del draft: posición y selección")
+  prueba |> mutate(pronostico = pred_raiz_pre,  momento = "Antes del draft"),
+  prueba |> mutate(pronostico = pred_raiz_post, momento = "Después del draft")
 ) |>
-  select(name, simple_pos, year, draft_pick, career_av, pronostico, momento)
+  mutate(observado = pmax(career_av, 0)) |>   # la escala de raíz no admite el único valor negativo
+  group_by(momento) |>
+  mutate(panel = paste0(momento, " · error medio: ", round(mae(career_av, pronostico), 1), " puntos")) |>
+  ungroup()
 
-destacados <- resultados |>
-  filter(name %in% c("Russell Wilson", "Richard Sherman", "Aaron Donald", "Dion Jordan"))
+decimos <- resultados |>
+  group_by(panel) |>
+  mutate(decimo = ntile(pronostico, 10)) |>
+  group_by(panel, decimo) |>
+  summarise(pronostico = mean(pronostico), promedio = mean(observado), mediana = median(observado),
+            .groups = "drop")
 ```
 
-```{r grafica-final, fig.width=10, fig.height=5.8}
-grafica_final <- ggplot(resultados, aes(x = pronostico, y = career_av)) +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "#52514e") +
-  geom_point(alpha = 0.3, size = 1.3, color = "#2a78d6") +
-  geom_point(data = destacados, color = "#eb6834", size = 2.6) +
-  geom_text(data = destacados, aes(label = name), hjust = -0.12, size = 3.3) +
-  facet_wrap(~ momento) +
-  coord_equal(xlim = c(-5, 145), ylim = c(-5, 145)) +
-  labs(title = "Antes del draft, los pronósticos apenas se alejan del promedio; después, ordenan mejor",
-       subtitle = paste("Valor de carrera observado y pronosticado de 686 jugadores elegidos entre 2011 y 2014,",
-                        "que no se usaron para estimar los modelos. Línea discontinua: pronóstico perfecto.",
-                        sep = "\n"),
-       x = "Valor de carrera pronosticado", y = "Valor de carrera observado (career_av)",
-       caption = fuente) +
-  estilo
+```{r grafica-final, fig.width=11, fig.height=7.2}
+cortes <- c(0, 5, 25, 50, 100, 150)
+
+grafica_final <- ggplot(resultados, aes(x = pronostico, y = observado)) +
+  geom_abline(aes(slope = 1, intercept = 0, linetype = "Pronóstico perfecto"), color = "#52514e") +
+  geom_point(alpha = 0.25, size = 1.3, color = "#2a78d6") +
+  geom_point(data = decimos, aes(y = promedio, shape = "Promedio real de cada décimo"),
+             color = "#eb6834", size = 3) +
+  geom_point(data = decimos, aes(y = mediana, shape = "Mediana real de cada décimo"),
+             color = "#eb6834", fill = "white", size = 3, stroke = 1.2) +
+  facet_wrap(~ panel) +
+  scale_shape_manual(values = c("Promedio real de cada décimo" = 16, "Mediana real de cada décimo" = 21),
+                     breaks = c("Promedio real de cada décimo", "Mediana real de cada décimo"), name = NULL) +
+  scale_linetype_manual(values = c("Pronóstico perfecto" = "dashed"), name = NULL) +
+  scale_x_sqrt(breaks = cortes, limits = c(0, 190)) +
+  scale_y_sqrt(breaks = cortes, limits = c(0, 190)) +
+  coord_equal() +
+  labs(title = "Más información mejora el pronóstico, pero el ruido sigue siendo enorme",
+       subtitle = paste0("Valor de carrera pronosticado y real · ", nrow(prueba),
+                         " jugadores elegidos en 2011–2014, que el modelo no vio"),
+       x = "Valor de carrera pronosticado", y = "Valor de carrera real",
+       caption = paste("Regresión lineal de la raíz cuadrada del valor de carrera, estimada con los elegidos de 2000–2010.",
+                       "Antes del draft: posición, Combine y universidad; después: además, el número de selección.",
+                       "Ejes en escala de raíz cuadrada.", fuente, sep = "\n")) +
+  estilo +
+  theme(panel.spacing.x = unit(2, "lines"))
 grafica_final
+
+dir.create("graficas", showWarnings = FALSE)
+ggsave("graficas/grafica_final.png", grafica_final, width = 11, height = 7.2, dpi = 150)
 ```
 
-`coord_equal()` usa la misma escala en los dos ejes: sin eso, la línea de 45 grados no se vería a 45 grados y la gráfica engañaría.
+- `aes(shape = "Promedio real de cada décimo")` con un texto fijo, en lugar de una columna, es un truco para que la capa aparezca en la leyenda con ese nombre; `scale_shape_manual()` decide qué forma le toca (16 = círculo relleno, 21 = círculo hueco).
+- `scale_x_sqrt()` y `scale_y_sqrt()` ponen los ejes en escala de raíz, y `coord_equal()` usa la misma escala en los dos: sin eso, la línea de 45 grados no se vería a 45 grados y la gráfica engañaría.
+- `ggsave()` guarda la gráfica en la carpeta `graficas/`, que es donde la pide la entrega.
 
 Qué muestra:
 
-- **Antes del draft**, los pronósticos se concentran en una franja estrecha (entre unos 6 y 41 puntos) mientras que lo observado va de 0 a 139: el modelo casi no distingue entre jugadores y se refugia cerca del promedio. Es lo que debe hacer un modelo honesto con poca información.
-- **Después del draft**, la franja se abre (de 0 a unos 84): la selección separa mejor a los jugadores.
-- **Ninguno anticipa a las estrellas.** Russell Wilson (selección 75) y Richard Sherman (154) quedan muy por encima de la línea en los dos paneles. Dion Jordan, elegido tercero, queda muy por debajo en el panel de la derecha: el draft también se equivoca, y el modelo hereda sus errores.
+- **Antes del draft**, los pronósticos se concentran en una franja estrecha mientras que lo observado va de 0 a más de 130: el modelo casi no distingue entre jugadores. Es lo que debe hacer un modelo honesto con poca información.
+- **Después del draft**, la franja se abre mucho: la selección separa mejor a los jugadores.
+- **Las medianas caen cerca de la línea; los promedios, por encima.** El modelo con raíz pronostica el valor típico de cada grupo, no su promedio (sesión 4).
+- **Ninguno anticipa a las estrellas:**
+
+```{r}
+prueba |>
+  filter(name %in% c("Russell Wilson", "Richard Sherman", "Aaron Donald", "Dion Jordan")) |>
+  transmute(name, year, draft_pick, career_av,
+            antes = round(pred_raiz_pre, 1), despues = round(pred_raiz_post, 1))
+```
+
+Russell Wilson (selección 75) y Richard Sherman (154) quedaron muy por encima de lo pronosticado, antes y después del draft. Dion Jordan, elegido tercero, quedó muy por debajo del pronóstico de después del draft: el draft también se equivoca, y el modelo hereda sus errores.
 
 ## Los errores
 
@@ -301,7 +401,7 @@ resultados |>
   estilo
 ```
 
-Con un resultado tan asimétrico, un modelo que pronostica valores esperados sobrestima un poco a la mayoría (que acumula poco) y subestima mucho a unos pocos (las estrellas). Por eso el RMSE, que castiga los errores grandes, siempre será mucho mayor que el MAE.
+Con un resultado tan asimétrico, un modelo que pronostica valores típicos acierta de cerca con la mayoría y subestima mucho a unos pocos: las estrellas. Por eso el RMSE, que castiga los errores grandes, siempre será mucho mayor que el MAE.
 
 ---
 
@@ -310,7 +410,7 @@ Con un resultado tan asimétrico, un modelo que pronostica valores esperados sob
 Si tu modelo principal pronostica `pro_bowl`, el resultado observado solo vale sí o no y el pronóstico es una probabilidad. **No tiene sentido una línea de 45 grados**: ningún jugador "vale" 0.23 Pro Bowls. Lo que se compara es cómo se reparten las probabilidades entre los que fueron y los que no.
 
 ```{r}
-logit_pre <- glm(pro_bowl ~ simple_pos + height + weight + forty + vert_leap + broad_jump,
+logit_pre <- glm(reformulate(predictores_pre, response = "pro_bowl"),
                  family = binomial, data = entrenamiento)
 prueba$prob_pre <- predict(logit_pre, newdata = prueba, type = "response")
 tasa_base <- mean(entrenamiento$pro_bowl)
@@ -325,14 +425,15 @@ prueba |>
   geom_hline(yintercept = tasa_base, linetype = "dashed", color = "#eb6834") +
   geom_hline(yintercept = 0.5, linetype = "dotted", color = "#52514e") +
   labs(title = "Los futuros Pro Bowl reciben algo más de probabilidad, con mucho solapamiento",
-       subtitle = paste("Probabilidad pronosticada antes del draft para los 686 jugadores de prueba (2011-2014).",
-                        "Línea naranja: umbral igual a la tasa base del entrenamiento (0.12); línea punteada: umbral 0.5.",
-                        sep = "\n"),
-       x = NULL, y = "Probabilidad pronosticada de ir al Pro Bowl", caption = fuente) +
+       subtitle = paste0("Probabilidad pronosticada antes del draft para los ", nrow(prueba),
+                         " jugadores de prueba (2011-2014)"),
+       x = NULL, y = "Probabilidad pronosticada de ir al Pro Bowl",
+       caption = paste0("Línea naranja: umbral igual a la tasa base del entrenamiento (", round(tasa_base, 2),
+                        "). Línea punteada: umbral 0.5.\n", fuente)) +
   estilo
 ```
 
-Si el modelo ordenara perfectamente, todos los puntos de la izquierda estarían por encima de todos los de la derecha. El solapamiento es lo que resume el AUC (alrededor de 0.64 en la sesión 4).
+Si el modelo ordenara perfectamente, todos los puntos de la izquierda estarían por encima de todos los de la derecha. El solapamiento es lo que resume el AUC (alrededor de 0.71 en la sesión 4).
 
 **El umbral.** Con 0.5, casi ningún jugador queda por encima: el modelo no marcaría a casi nadie. Con la tasa base del entrenamiento, se marca a muchos más. Lo que cambia:
 
@@ -360,7 +461,7 @@ Le pasamos a un asistente la tabla de la sección 1.7 y la gráfica final, y le 
 ::: {.chat-usuario}
 [Tú]{.etiqueta}
 
-Redacta las conclusiones de mi proyecto para el director general. Resultados: modelo antes del draft, MAE 17.46 (referencia 17.62); después del draft, MAE 14.31. Coeficiente de `forty`: −28.3. AUC del modelo de Pro Bowl: 0.64, exactitud con umbral 0.5: 85.7%.
+Redacta las conclusiones de mi proyecto para el director general. Resultados: modelo antes del draft, MAE 14.62 (referencia 17.16); después del draft, MAE 12.54. Coeficiente de `forty` en el modelo lineal: −29.3. AUC del modelo de Pro Bowl: 0.71, exactitud con umbral 0.5: 87.4%.
 :::
 
 ::: {.chat-ia}
@@ -368,10 +469,10 @@ Redacta las conclusiones de mi proyecto para el director general. Resultados: mo
 
 **Conclusiones** 🏈📊
 
-1. **La velocidad es clave para el éxito en la NFL.** Nuestro modelo demuestra que reducir el tiempo en 40 yardas en 0.1 segundos **aumenta** el valor de carrera de un jugador en 2.8 puntos.
-2. **El modelo de Pro Bowl alcanza una precisión del 85.7%**, lo que lo convierte en una herramienta confiable para identificar futuras estrellas.
+1. **La velocidad es clave para el éxito en la NFL.** Nuestro modelo demuestra que reducir el tiempo en 40 yardas en 0.1 segundos **aumenta** el valor de carrera de un jugador en 2.9 puntos.
+2. **El modelo de Pro Bowl alcanza una precisión del 87.4%**, lo que lo convierte en una herramienta confiable para identificar futuras estrellas.
 3. **El Combine no sirve para pronosticar**: una vez conocida la selección del draft, las pruebas físicas no aportan nada, por lo que recomendamos dejar de invertir en evaluaciones atléticas.
-4. El indicador puede aplicarse a **cualquier prospecto universitario** para estimar su valor futuro con un margen de error de ±17 puntos.
+4. El indicador puede aplicarse a **cualquier prospecto universitario** para estimar su valor futuro con un margen de error de ±15 puntos.
 
 **Recomendación:** priorizar a los jugadores con mejores tiempos en 40 yardas en las primeras rondas del próximo draft. 🚀
 :::
@@ -413,7 +514,7 @@ Tu proyecto no puede ser una copia del ejemplo resuelto. Elige **una** variante 
 | Variante | Qué cambia | Dónde suele estar la dificultad |
 |----------|------------|---------------------------------|
 | A. Una posición | Un modelo solo para una posición (por ejemplo, RB o WR) | Muestra más pequeña: pocos jugadores de prueba |
-| B. Otros predictores | `speed_score`, `bench_press` o `shuttle`, o medidas de brazos y manos | Más faltantes: documenta qué jugadores pierdes |
+| B. Otros predictores | `speed_score`, medidas de brazos y manos (`arm_length`, `hand_size`) o interacciones con la posición | Más faltantes o más coeficientes: documenta cómo los tratas y qué cambia fuera de muestra |
 | C. Éxito binario | `pro_bowl` como resultado, con logística o probit | Umbral y métricas; la gráfica de la sección 3 |
 | D. Elastic Net | Más predictores y Elastic Net como modelo alternativo | Explicar la selección y su estabilidad |
 | E. Otra medida de éxito | `years_as_primary_starter` como resultado | Justificar la medida y su comparabilidad |
@@ -424,11 +525,11 @@ En cualquier variante, el proyecto debe tener un modelo de referencia, un modelo
 
 Todo proyecto incluye una sección `# Una decisión que puse a prueba`. El director general te escribe:
 
-> "Evaluar con los drafts 2011–2014 es mirar el pasado. Evalúa también con los de 2015–2018, que se parecen más a los próximos. Hice la prueba con tu modelo: el error baja de 17.5 a 15.6. ¡El indicador funciona mejor con los jugadores recientes! Pon esa cifra en la presentación."
+> "Evaluar con los drafts 2011–2014 es mirar el pasado. Evalúa también con los de 2015–2018, que se parecen más a los próximos. Hice la prueba con tu modelo: el error baja de 14.6 a 13.5. ¡El indicador funciona mejor con los jugadores recientes! Pon esa cifra en la presentación."
 
 **1. Anticipa.** ¿Por qué podría bajar el error con jugadores más recientes? Escribe al menos dos explicaciones posibles.
 
-**2. Implementa la propuesta tal como está** (con tu modelo principal en lugar de `modelo_pre`, si es distinto):
+**2. Implementa la propuesta tal como está** (con tu modelo principal en lugar de `raiz_pre`, si es distinto):
 
 ```r
 recientes <- nfl |>
@@ -438,9 +539,10 @@ recientes <- nfl |>
          !(tag %in% tags_repetidos)) |>
   mutate(nunca_jugo = is.na(career_av),
          career_av = ifelse(nunca_jugo, 0, career_av)) |>
-  filter(!is.na(forty), !is.na(vert_leap), !is.na(broad_jump))
+  agregar_ncaa() |>
+  marcar_y_rellenar(aprende = entrenamiento)
 
-pred_recientes <- predict(modelo_pre, newdata = recientes)
+pred_recientes <- pmax(predict(raiz_pre, newdata = recientes), 0)^2
 mae(recientes$career_av, pred_recientes)
 ```
 

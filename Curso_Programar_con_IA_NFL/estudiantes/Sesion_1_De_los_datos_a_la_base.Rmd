@@ -41,26 +41,318 @@ if (!is.null(knitr::current_input())) {
 .chat-usuario { background: #eef2f7; border-radius: 14px 14px 4px 14px; padding: 0.6em 1em; margin: 1em 0 1em 12%; }
 .chat-ia { background: #fffaf7; border: 1px solid #f2c9b4; border-radius: 14px 14px 14px 4px; padding: 0.6em 1em; margin: 1em 12% 1em 0; }
 .etiqueta { display: block; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b6a65; margin-bottom: 0.3em; }
+.ruta { display: flex; flex-wrap: wrap; gap: 0.7em; margin: 1.2em 0; }
+.paso { flex: 1 1 170px; border-top: 4px solid #2a78d6; background: #f7f9fc; border-radius: 0 0 8px 8px; padding: 0.6em 0.9em; }
+.paso p { margin: 0.2em 0; }
+.cuando { display: block; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #6b6a65; }
+.titulo-paso { display: block; font-size: 1.12em; font-weight: 700; color: #104281; margin-bottom: 0.25em; }
 ```
 
-# Para empezar: la pregunta del curso
+# Para empezar: de qué trata este curso
 
-Cada abril, los 32 equipos de la NFL eligen a unos 250 jugadores universitarios en el **draft**. Antes, en el **Combine**, los miden, los pesan y los hacen correr, saltar y levantar pesas. Con esa información, más lo que vieron en sus partidos universitarios, los equipos apuestan millones de dólares a que un muchacho de 21 años tendrá una buena carrera profesional. Muchas veces se equivocan.
+En este curso vas a aprender a programar en R trabajando en un solo proyecto, de principio a fin. El tema es el fútbol americano profesional de Estados Unidos, la **NFL**, pero no necesitas saber nada de fútbol americano: todo lo que hace falta está en esta sección. Lo que sí vas a reconocer es el problema de fondo, porque es un problema de economía.
 
-En este curso vas a construir, paso a paso, un **indicador de pronóstico del éxito profesional** y a responder una pregunta concreta:
+## Un problema de economía con casco
+
+Cada primavera, los 32 equipos de la NFL contratan a unos 250 jugadores que acaban de terminar su etapa universitaria. Es una decisión cara y con información incompleta. El equipo ve **señales**: cuánto mide el jugador, qué tan rápido corre, qué hizo en la universidad, cómo le fue en una entrevista. Pero no ve lo que de verdad le importa: **qué tan buen profesional será**. Es el mismo problema de una empresa que contrata a recién egresados mirando sus calificaciones, o de un banco que decide un crédito mirando el historial de quien lo pide.
+
+La NFL tiene algo que casi ningún otro mercado de trabajo tiene: **datos públicos de todo el proceso**. Sabemos cómo le fue a cada candidato en las pruebas, quién lo contrató, en qué orden y cómo fue su carrera en los diez o quince años siguientes. Eso permite hacer lo que haremos en el curso: construir un pronóstico y **comprobar** si acierta.
+
+## El fútbol americano en dos minutos
+
+Se enfrentan dos equipos de 11 jugadores. El equipo que tiene el balón, el **ataque**, intenta avanzar hasta la zona de anotación del rival corriendo con el balón o lanzando pases. El otro, la **defensa**, intenta impedirlo. Cada equipo tiene jugadores distintos para atacar y para defender, y cada jugador ocupa una **posición** con una tarea muy concreta. En los datos, cada jugador tiene un código de posición, `simple_pos`:
+
+| Código | Posición | Qué hace |
+|--------|----------|----------|
+| `QB` | Mariscal de campo (*quarterback*) | Dirige el ataque y lanza los pases |
+| `RB` | Corredor (*running back*) | Corre con el balón; rápido y difícil de derribar |
+| `WR` | Receptor (*wide receiver*) | Atrapa los pases; suelen ser los más rápidos |
+| `TE` | Ala cerrada (*tight end*) | Atrapa pases y también bloquea; grande y rápido a la vez |
+| `OL` | Línea ofensiva | Bloquea para proteger al mariscal y abrirle paso al corredor; los más pesados del campo |
+| `DL` | Línea defensiva | Empuja contra la línea ofensiva para llegar al mariscal o al corredor |
+| `LB` | Apoyador (*linebacker*) | Detiene al corredor y cubre pases cortos |
+| `DB` | Defensivo profundo (esquineros y profundos) | Cubre a los receptores e intercepta pases |
+| `ST` | Equipos especiales | Patean el balón; los dejaremos fuera del análisis |
+
+No hace falta memorizarla: vuelve aquí cada vez que aparezca un código.
+
+## Cómo llega un jugador a la NFL
+
+::::: {.ruta}
+:::: {.paso}
+[Tres a cinco años]{.cuando}
+[1. La universidad]{.titulo-paso}
+Los jugadores se forman en el fútbol universitario, la **NCAA**, que en Estados Unidos es enorme. Ahí acumulan estadísticas: yardas, pases completos, tacleadas.
+::::
+:::: {.paso}
+[Febrero]{.cuando}
+[2. El Combine]{.titulo-paso}
+La NFL invita a unos 300 prospectos a una semana de pruebas: los miden, los pesan, los cronometran en 40 yardas y los hacen saltar, levantar pesas y cambiar de dirección.
+::::
+:::: {.paso}
+[Abril]{.cuando}
+[3. El draft]{.titulo-paso}
+Los 32 equipos eligen jugadores por turnos durante 7 rondas; en general, el que tuvo la peor temporada elige primero. El orden en que alguien es elegido es su **número de selección**: 1 es el primero; alrededor de 250, el último.
+::::
+:::: {.paso}
+[Los años siguientes]{.cuando}
+[4. La carrera]{.titulo-paso}
+Algunos juegan quince temporadas y van varias veces al partido de las estrellas; otros nunca juegan un partido oficial.
+::::
+:::::
+
+Un jugador que no es elegido en el draft puede firmar después con algún equipo, pero en nuestros datos no hay información de su carrera.
+
+## ¿Cómo se mide el éxito de una carrera?
+
+No es obvio: un buen mariscal acumula miles de yardas, mientras que un buen liniero ofensivo casi no aparece en las estadísticas. Usaremos dos medidas:
+
+- **Valor de carrera** (`career_av`). El sitio Pro Football Reference le asigna a cada jugador, en cada temporada, un número llamado *Approximate Value* (AV) que resume lo que aportó: si fue titular, sus estadísticas y el rendimiento de su unidad. La suma de todas sus temporadas es su valor de carrera. Para darte una idea, entre los elegidos de 2000 a 2014 la mitad acumuló 8 puntos o menos, uno de cada cinco se quedó en 0, uno de cada diez pasó de 50 y muy pocos superaron los 100. Drew Brees tiene 167; Tom Brady, 184, el máximo del archivo.
+- **Pro Bowl**, el partido de las estrellas de la NFL. Ir al menos una vez es una distinción que alcanzó uno de cada ocho elegidos.
+
+## La pregunta del curso
+
+En el curso te pondrás en el lugar del departamento de análisis de un equipo y responderás una pregunta concreta:
 
 ::: {.mensaje}
 ¿Qué características de un jugador, conocidas antes o en el momento del draft, permiten pronosticar su éxito futuro en la NFL?
 :::
 
-Lo harás programando en R, con ayuda de la IA si quieres, pero con una regla que no cambia en todo el curso: **la IA puede escribir código por ti; tú necesitas entender qué hace, comprobar si está bien y responsabilizarte de lo que presentas.**
+## La historia del curso en tres gráficas
+
+Antes de escribir una línea de código, mira adónde vamos a llegar. Estas tres gráficas resumen lo que encontrarás en el curso. Todavía no necesitas entender cómo se hicieron.
+
+```{r historia, include=FALSE}
+# Las tres gráficas de la portada. Hoy no necesitas entender este código:
+# en las sesiones 3, 4 y 5 escribirás código parecido.
+hay_graficas <- requireNamespace("ggplot2", quietly = TRUE)
+url_portada <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
+                      "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
+portada <- tryCatch(read.csv(url_portada, sep = ";", na.strings = "", encoding = "UTF-8"),
+                    error = function(e) NULL)
+if (is.null(portada) && file.exists("datos/nfl_data.csv")) {
+  portada <- read.csv("datos/nfl_data.csv", sep = ";", na.strings = "", encoding = "UTF-8")
+}
+hay_graficas <- hay_graficas && !is.null(portada)
+
+if (hay_graficas) {
+  library(dplyr)
+  library(ggplot2)
+  azul <- "#2a78d6"; naranja <- "#eb6834"; gris <- "#52514e"; tenue <- "#898781"
+  fuente <- "Datos: phcs971/nfl-draft-dataset (Combine, draft, Pro Football Reference y Sports Reference). Sin pateadores ni despejadores."
+  mil <- function(x) format(x, big.mark = ",")
+  estilo_portada <- theme_minimal(base_size = 13) +
+    theme(plot.title = element_text(face = "bold", size = 16), plot.title.position = "plot",
+          plot.subtitle = element_text(color = gris, size = 12.5, margin = margin(b = 10)),
+          plot.caption = element_text(color = tenue, size = 9.5, hjust = 0, lineheight = 1.2,
+                                      margin = margin(t = 12)),
+          plot.caption.position = "plot",
+          panel.grid.minor = element_blank(), panel.grid.major = element_line(color = "#e8e7e1"),
+          strip.text = element_text(face = "bold", hjust = 0, size = 12.5), strip.clip = "off",
+          axis.title = element_text(color = gris), axis.text = element_text(size = 11, color = gris),
+          legend.position = "top", legend.justification = "left", legend.text = element_text(color = gris),
+          plot.margin = margin(12, 18, 10, 18))
+
+  repetidos <- portada$tag[duplicated(portada$tag)]
+  todos <- portada |>
+    rename(forty = X40_yard) |>
+    mutate(drafted = as.logical(drafted)) |>
+    filter(year >= 1987, year <= 2014, simple_pos != "ST", !(tag %in% repetidos))
+
+  # 1. Puntaje del Combine y ronda en que se elige -----------------------------
+  pruebas_signo <- c(forty = -1, bench_press = 1, vert_leap = 1, broad_jump = 1, shuttle = -1)
+  z <- function(x) (x - mean(x, na.rm = TRUE)) / sd(x, na.rm = TRUE)
+  d1 <- todos |>
+    group_by(simple_pos, year) |>
+    mutate(across(all_of(names(pruebas_signo)), z, .names = "z_{.col}")) |>
+    ungroup()
+  zs <- sweep(as.matrix(d1[paste0("z_", names(pruebas_signo))]), 2, pruebas_signo, "*")
+  d1$puntaje <- rowMeans(zs, na.rm = TRUE)
+  sin_pruebas <- sum(is.nan(d1$puntaje))
+  paneles1 <- c(paste("Elegido en la ronda", 1:6), "Elegido en la ronda 7 o más", "No elegido")
+  d1 <- d1 |>
+    filter(!is.nan(puntaje)) |>
+    mutate(grupo = 11 - ntile(puntaje, 10),   # 1 = el 10 % con mejor resultado
+           ronda = case_when(!drafted ~ "No elegido",
+                             draft_round >= 7 ~ "Elegido en la ronda 7 o más",
+                             TRUE ~ paste("Elegido en la ronda", draft_round)))
+  p1 <- d1 |>
+    count(grupo, ronda) |>
+    group_by(grupo) |>
+    mutate(prob = n / sum(n)) |>
+    ungroup() |>
+    mutate(ronda = factor(ronda, levels = paneles1), tipo = ifelse(ronda == "No elegido", "no", "si"))
+  extremos <- p1 |>
+    group_by(ronda) |>
+    mutate(y_et = sapply(grupo, function(g) max(prob[grupo %in% c(g, g + ifelse(g == 1, 1, -1))]))) |>
+    ungroup() |>
+    filter(grupo %in% c(1, 10))
+  topes <- data.frame(ronda = factor(paneles1, levels = paneles1), grupo = 1, prob = c(rep(0.30, 7), 0.60))
+
+  grafica_1 <- ggplot(p1, aes(grupo, prob)) +
+    geom_blank(data = topes) +
+    geom_col(aes(fill = tipo), width = 0.78) +
+    geom_text(data = extremos, aes(y = y_et, label = paste0(round(100 * prob), "%")),
+              vjust = -0.45, size = 3.6, color = "#0b0b0b", fontface = "bold") +
+    facet_wrap(~ ronda, nrow = 2, scales = "free_y",
+               labeller = as_labeller(setNames(c(paneles1[1:7], "No elegido (eje hasta 60 %)"), paneles1))) +
+    scale_fill_manual(values = c(si = azul, no = tenue), guide = "none") +
+    scale_x_continuous(breaks = c(1, 10), labels = c("Mejor\n10 %", "Peor\n10 %"), expand = expansion(add = 0.6)) +
+    scale_y_continuous(labels = function(x) paste0(round(100 * x), "%"),
+                       breaks = function(l) if (l[2] > 0.4) seq(0, 0.6, 0.2) else seq(0, 0.3, 0.1),
+                       expand = expansion(mult = c(0, 0.08))) +
+    labs(title = "A mejor resultado en el Combine, más probable ser elegido en las primeras rondas",
+         subtitle = paste0("Porcentaje de jugadores elegidos en cada ronda según su resultado en el Combine · ",
+                           mil(nrow(d1)), " participantes, 1987–2014"),
+         x = "Resultado en el Combine: jugadores ordenados del mejor al peor, en 10 grupos del mismo tamaño",
+         y = "Porcentaje de jugadores del grupo",
+         caption = paste0(
+           "Cada barra es un grupo de unos ", round(nrow(d1) / 10, -1), " jugadores; su altura es el porcentaje de ese grupo que fue elegido en esa ronda. Las ocho barras de un mismo grupo suman 100 %.\n",
+           "Resultado en el Combine: promedio de las pruebas que hizo cada jugador (40 yardas, press de banca, salto vertical, salto largo y shuttle), cada una normalizada frente\n",
+           "a los de su misma posición y año, y con el signo cambiado en las pruebas de tiempo para que más sea siempre mejor. Las medidas corporales no entran porque más no\n",
+           "siempre es mejor. Hasta 1993 el draft tuvo más de 7 rondas; esas rondas se suman a la 7. No aparecen ", mil(sin_pruebas), " participantes que no hicieron ninguna prueba.\n",
+           fuente)) +
+    estilo_portada +
+    theme(panel.grid.major.x = element_blank(), panel.spacing.x = unit(1.6, "lines"),
+          panel.spacing.y = unit(1.4, "lines"), axis.title.x = element_text(margin = margin(t = 8)))
+
+  # 2. Número de selección y valor de la carrera -------------------------------
+  e <- todos |> filter(drafted) |> mutate(av = ifelse(is.na(career_av), 0, career_av))
+  prom <- e |>
+    mutate(grupo = floor((draft_pick - 1) / 8)) |>
+    group_by(grupo) |>
+    summarise(pick = mean(draft_pick), av = mean(av), n = n(), .groups = "drop") |>
+    filter(n >= 10)
+  destacados <- e |> filter(name %in% c("Tom Brady", "Peyton Manning"))
+  grafica_2 <- ggplot(e, aes(draft_pick, av)) +
+    geom_point(aes(color = "Cada jugador elegido"), position = position_jitter(width = 0.4, height = 0.3, seed = 2),
+               size = 0.9, alpha = 0.28, shape = 16) +
+    geom_line(data = prom, aes(pick, av, color = "Promedio cada 8 selecciones"), linewidth = 1.1) +
+    geom_point(data = prom, aes(pick, av, color = "Promedio cada 8 selecciones"), size = 1.8) +
+    geom_point(data = destacados, color = "#0b0b0b", size = 3) +
+    geom_text(data = destacados, aes(label = name), hjust = -0.12, vjust = -0.6, size = 3.8,
+              color = "#0b0b0b", fontface = "bold") +
+    scale_color_manual(values = c("Cada jugador elegido" = azul, "Promedio cada 8 selecciones" = naranja), name = NULL) +
+    guides(color = guide_legend(override.aes = list(size = 3, alpha = 1, linetype = c(0, 1)))) +
+    scale_x_continuous(breaks = c(1, 32, 64, 100, 150, 200, 250, 300)) +
+    scale_y_continuous(breaks = seq(0, 175, 25)) +
+    labs(title = "Las primeras selecciones tienen mejores carreras en promedio, pero hay enormes excepciones",
+         subtitle = paste0("Valor de carrera según el número de selección · ", mil(nrow(e)), " jugadores elegidos, 1987–2014"),
+         x = "Número de selección en el draft", y = "Valor de carrera (career_av)",
+         caption = paste0("Los jugadores elegidos que nunca jugaron cuentan con valor 0. Hasta 1993 el draft tuvo más de 7 rondas: por eso hay selecciones después de la 262.\n", fuente)) +
+    estilo_portada
+
+  # 3. Pronóstico antes y después del draft --------------------------------------
+  defensa <- c("DL", "LB", "DB")
+  elegidos <- todos |>
+    filter(drafted, year >= 2000) |>
+    mutate(career_av = ifelse(is.na(career_av), 0, career_av),
+           ncaa_yardas_pase      = ifelse(simple_pos == "QB", log1p(pmax(college_pass_yds, 0)), 0),
+           ncaa_td_pase          = ifelse(simple_pos == "QB", log1p(college_pass_td), 0),
+           ncaa_yardas_tierra    = ifelse(simple_pos == "RB", log1p(pmax(college_rush_yds, 0)), 0),
+           ncaa_yardas_recepcion = ifelse(simple_pos %in% c("WR", "TE"), log1p(pmax(college_rec_yds, 0)), 0),
+           ncaa_tacleadas        = ifelse(simple_pos %in% defensa, log1p(college_tackles), 0),
+           ncaa_capturas         = ifelse(simple_pos %in% defensa, log1p(college_sacks), 0),
+           ncaa_intercepciones   = ifelse(simple_pos %in% defensa, log1p(college_ints), 0),
+           ncaa_partidos         = college_games)
+  pruebas <- c("forty", "vert_leap", "broad_jump", "bench_press", "shuttle")
+  estadisticas_ncaa <- c("ncaa_yardas_pase", "ncaa_td_pase", "ncaa_yardas_tierra", "ncaa_yardas_recepcion",
+                         "ncaa_tacleadas", "ncaa_capturas", "ncaa_intercepciones")
+  marcar_y_rellenar <- function(datos, aprende) {
+    datos <- datos |>
+      mutate(across(all_of(pruebas), is.na, .names = "sin_{.col}"),
+             sin_ncaa     = if_any(all_of(estadisticas_ncaa), is.na),
+             sin_partidos = is.na(ncaa_partidos))
+    for (v in c(pruebas, estadisticas_ncaa, "ncaa_partidos")) {
+      medianas <- tapply(aprende[[v]], aprende$simple_pos, median, na.rm = TRUE)
+      datos[[v]] <- ifelse(is.na(datos[[v]]), medianas[datos$simple_pos], datos[[v]])
+    }
+    datos
+  }
+  ent <- elegidos |> filter(year <= 2010)
+  pru <- elegidos |> filter(year >= 2011) |> marcar_y_rellenar(aprende = ent)
+  ent <- ent |> marcar_y_rellenar(aprende = ent)
+  ent$raiz_av <- sqrt(pmax(ent$career_av, 0))
+  predictores_pre <- c("simple_pos", "height", "weight", pruebas, paste0("sin_", pruebas),
+                       estadisticas_ncaa, "ncaa_partidos", "sin_ncaa", "sin_partidos")
+  modelos <- list("Antes del draft"   = reformulate(predictores_pre, response = "raiz_av"),
+                  "Después del draft" = reformulate(c(predictores_pre, "log(draft_pick)"), response = "raiz_av"))
+  p3 <- bind_rows(lapply(names(modelos), function(m) {
+    ajuste <- lm(modelos[[m]], data = ent)
+    data.frame(momento = m, pronostico = pmax(predict(ajuste, pru), 0)^2, real = pmax(pru$career_av, 0),
+               error = abs(pru$career_av - pmax(predict(ajuste, pru), 0)^2))
+  })) |>
+    group_by(momento) |>
+    mutate(panel = paste0(momento, " · error medio: ", format(round(mean(error), 1), nsmall = 1), " puntos")) |>
+    ungroup()
+  decimos <- p3 |>
+    group_by(panel) |>
+    mutate(decimo = ntile(pronostico, 10)) |>
+    group_by(panel, decimo) |>
+    summarise(pronostico = mean(pronostico), promedio = mean(real), mediana = median(real), .groups = "drop")
+  marcas <- bind_rows(decimos |> transmute(panel, pronostico, valor = promedio, tipo = "Promedio real de cada décimo"),
+                      decimos |> transmute(panel, pronostico, valor = mediana, tipo = "Mediana real de cada décimo"))
+  cortes <- c(0, 5, 25, 50, 100, 150)
+  grafica_3 <- ggplot(p3, aes(pronostico, real)) +
+    geom_abline(aes(slope = 1, intercept = 0, linetype = "Pronóstico perfecto"), color = gris) +
+    geom_point(color = azul, alpha = 0.25, size = 1.3, shape = 16) +
+    geom_point(data = marcas, aes(pronostico, valor, shape = tipo), color = naranja, fill = "white",
+               size = 3.2, stroke = 1.3) +
+    facet_wrap(~ panel) +
+    scale_shape_manual(values = c("Promedio real de cada décimo" = 16, "Mediana real de cada décimo" = 21),
+                       breaks = c("Promedio real de cada décimo", "Mediana real de cada décimo"), name = NULL) +
+    scale_linetype_manual(values = c("Pronóstico perfecto" = "dashed"), name = NULL) +
+    scale_x_continuous(trans = "sqrt", breaks = cortes, limits = c(0, 190)) +
+    scale_y_continuous(trans = "sqrt", breaks = cortes, limits = c(0, 190)) +
+    coord_equal() +
+    labs(title = "Más información mejora el pronóstico, pero el ruido sigue siendo enorme",
+         subtitle = paste0("Valor de carrera pronosticado y real · ", mil(nrow(pru)), " jugadores elegidos en 2011–2014"),
+         x = "Valor de carrera pronosticado", y = "Valor de carrera real",
+         caption = paste0(
+           "Regresión lineal de la raíz cuadrada del valor de carrera, estimada con los elegidos de 2000–2010 y evaluada en los de 2011–2014, que el modelo no vio.\n",
+           "Antes del draft: posición, medidas y pruebas del Combine y estadísticas universitarias (NCAA). Después del draft: lo mismo más el número de selección.\n",
+           "Los datos faltantes se rellenan con la mediana de la posición, con un indicador de dato faltante. Error medio: promedio de la diferencia absoluta entre\n",
+           "lo pronosticado y lo real. Naranja: jugadores ordenados por su pronóstico en 10 grupos del mismo tamaño. Ejes en escala de raíz cuadrada.\n", fuente)) +
+    estilo_portada +
+    theme(panel.spacing.x = unit(2, "lines"))
+}
+
+sin_grafica <- function() {
+  plot.new()
+  text(0.5, 0.5, "Sin conexión: la gráfica aparecerá cuando R pueda leer los datos (sección 2)\no cuando esté instalado el paquete ggplot2 (sección «Antes de empezar»).")
+}
+```
+
+**Primero, el Combine.** ¿A quienes mejor salen en las pruebas les va mejor en el draft? Ordenamos a los participantes del Combine de mejor a peor resultado y los repartimos en diez grupos del mismo tamaño. Cada panel muestra qué porcentaje de cada grupo fue elegido en una ronda; el último, qué porcentaje no fue elegido.
+
+```{r grafica-1, echo=FALSE, fig.width=12, fig.height=8}
+if (hay_graficas) grafica_1 else sin_grafica()
+```
+
+Entre el 10 % con mejor Combine, uno de cada cinco fue elegido en la primera ronda; entre el 10 % con peor resultado, dos de cada cien. Con los no elegidos pasa al revés. **El Combine ayuda a pronosticar quién será elegido y cuándo**, pero no lo decide: incluso entre los mejores, uno de cada cinco se quedó sin equipo.
+
+**Después, el draft.** ¿Los primeros en ser elegidos tienen mejores carreras? Cada punto es un jugador elegido: su número de selección y el valor de carrera que acumuló.
+
+```{r grafica-2, echo=FALSE, fig.width=12, fig.height=7}
+if (hay_graficas) grafica_2 else sin_grafica()
+```
+
+En promedio, sí: la línea naranja cae con fuerza en las primeras selecciones. Pero mira la nube de puntos: en cada número de selección hay de todo. Peyton Manning fue la primera selección de 1998 y respondió; Tom Brady fue la 199 de 2000 y acumuló el mayor valor de carrera del archivo. **El número de selección ayuda a pronosticar la carrera, con enormes excepciones.**
+
+**Por último, el pronóstico.** Juntamos lo que se sabe de cada jugador (posición, medidas y pruebas del Combine, estadísticas universitarias y, en el panel de la derecha, su número de selección) en un modelo estimado con los drafts de 2000 a 2010. Con él pronosticamos el valor de carrera de los elegidos de 2011 a 2014, que el modelo no vio. Si el pronóstico fuera perfecto, todos los puntos caerían sobre la línea discontinua.
+
+```{r grafica-3, echo=FALSE, fig.width=12, fig.height=8}
+if (hay_graficas) grafica_3 else sin_grafica()
+```
+
+Con más información el pronóstico mejora: el error medio baja de 14.6 a 12.5 puntos cuando se conoce el número de selección. Pero los puntos siguen muy lejos de la línea. **El éxito se puede pronosticar solo en parte: siempre queda mucho ruido.** Entender por qué, y no prometer más de lo que los datos permiten, es buena parte del curso.
 
 :::: {.cifras}
 ::: {.cifra}
 [14,163]{.num} [prospectos medidos en el Combine, de 1987 a 2024]{.lab}
 :::
 ::: {.cifra}
-[59]{.num} [columnas: medidas físicas, pruebas, draft y carrera]{.lab}
+[59]{.num} [columnas: medidas físicas, pruebas, universidad, draft y carrera]{.lab}
 :::
 ::: {.cifra}
 [8,234]{.num} [fueron elegidos en el draft]{.lab}
@@ -70,72 +362,25 @@ Lo harás programando en R, con ayuda de la IA si quieres, pero con una regla qu
 :::
 ::::
 
-Esta es la gráfica con la que vas a terminar el curso. Cada punto es un jugador elegido entre 2011 y 2014 que el modelo **nunca vio**: en el eje horizontal, el valor de carrera que le **pronosticó** el modelo con la información del draft; en el vertical, el que **realmente** acumuló. Si el pronóstico fuera perfecto, todos los puntos caerían sobre la línea discontinua.
+## Lo que harás en cada sesión
 
-```{r vista-previa, echo=FALSE, fig.width=10, fig.height=5.6}
-# Vista previa del curso: el pronóstico del valor de carrera que construirás en la sesión 5.
-# Hoy no necesitas entender este código.
-url_vista <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
-                    "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
-vista <- tryCatch(read.csv(url_vista, sep = ";", na.strings = ""),
-                  error = function(e) NULL)
-if (is.null(vista) && file.exists("datos/nfl_data.csv")) {
-  vista <- read.csv("datos/nfl_data.csv", sep = ";", na.strings = "")
-}
+| Sesión | La pregunta | Lo que aprendes a hacer en R |
+|--------|-------------|------------------------------|
+| 1 | ¿Qué datos tenemos y cuáles sirven? | Cargar, mirar y limpiar una tabla |
+| 2 | ¿Cómo se reparte el éxito y qué se relaciona con él? | Resumir, comparar grupos y calcular correlaciones |
+| 3 | ¿Cómo se ve el problema? | Hacer gráficas que respondan preguntas |
+| 4 | ¿Se puede pronosticar el éxito? | Estimar modelos y medir su error con jugadores que no vieron |
+| 5 | ¿Qué tan bueno es el indicador y para qué sirve? | Reunir todo en un proyecto reproducible y comunicarlo con sus límites |
 
-if (!is.null(vista)) {
-  # Misma limpieza y misma muestra que en las sesiones 1 y 4
-  repetidos <- vista$tag[duplicated(vista$tag)]
-  vista <- vista[vista$drafted == "True" & vista$year >= 2000 & vista$year <= 2014 &
-                 vista$simple_pos != "ST" & !(vista$tag %in% repetidos) &
-                 !is.na(vista$X40_yard) & !is.na(vista$vert_leap) & !is.na(vista$broad_jump), ]
-  vista$career_av[is.na(vista$career_av)] <- 0
-  ent <- vista[vista$year <= 2010, ]   # el modelo aprende con los drafts 2000-2010
-  pru <- vista[vista$year >= 2011, ]   # y pronostica los drafts 2011-2014
+Lo harás programando en R, con ayuda de la IA si quieres, pero con una regla que no cambia en todo el curso: **la IA puede escribir código por ti; tú necesitas entender qué hace, comprobar si está bien y responsabilizarte de lo que presentas.**
 
-  antes   <- lm(career_av ~ simple_pos + height + weight + X40_yard + vert_leap + broad_jump, data = ent)
-  despues <- lm(career_av ~ simple_pos + log(draft_pick), data = ent)
-  paneles <- list(
-    list(pred = predict(antes, pru), titulo = "Antes del draft: posición y pruebas del Combine",
-         nombres = c("Russell Wilson", "Richard Sherman", "Aaron Donald")),
-    list(pred = predict(despues, pru), titulo = "Después del draft: posición y número de selección",
-         nombres = c("Russell Wilson", "Richard Sherman", "Aaron Donald", "Dion Jordan"))
-  )
+Tres preguntas que vas a poder responder al final:
 
-  par(mfrow = c(1, 2), mar = c(4.5, 4.5, 2.5, 1), oma = c(0, 0, 3.5, 0), las = 1, bty = "l",
-      col.axis = "#52514e", col.lab = "#52514e", fg = "#898781")
-  for (p in paneles) {
-    plot(p$pred, pru$career_av, type = "n", asp = 1, xlim = c(-5, 145), ylim = c(-5, 145),
-         xlab = "Valor de carrera pronosticado", ylab = "Valor de carrera observado")
-    grid(col = "#e6e5e0", lty = 1)
-    abline(0, 1, lty = 2, col = "#52514e")
-    points(p$pred, pru$career_av, pch = 19, cex = 0.7, col = adjustcolor("#2a78d6", alpha.f = 0.35))
-    marca <- pru$name %in% p$nombres
-    points(p$pred[marca], pru$career_av[marca], pch = 21, bg = "#eb6834", col = "white", cex = 1.8, lwd = 1.5)
-    text(p$pred[marca], pru$career_av[marca], pru$name[marca], pos = 4, cex = 0.8, col = "#0b0b0b")
-    error <- mean(abs(pru$career_av - p$pred))
-    title(main = p$titulo, adj = 0, font.main = 1, cex.main = 0.95, line = 1.2, col.main = "#0b0b0b")
-    mtext(paste("Error medio:", round(error, 1), "puntos"), side = 3, line = 0.1, adj = 0,
-          cex = 0.8, col = "#52514e")
-  }
-  mtext("¿Se puede pronosticar el éxito en la NFL? Lo pronosticado frente a lo que pasó",
-        outer = TRUE, side = 3, line = 1.6, adj = 0, cex = 1.15, col = "#0b0b0b")
-  mtext(paste(nrow(pru), "jugadores elegidos entre 2011 y 2014, que el modelo no usó para aprender.",
-              "Línea discontinua: pronóstico perfecto."),
-        outer = TRUE, side = 3, line = 0.3, adj = 0, cex = 0.85, col = "#52514e")
-} else {
-  plot.new()
-  text(0.5, 0.5, "Sin conexión: la gráfica aparecerá cuando R pueda leer los datos (sección 2).")
-}
-```
+- ¿Por qué un buen Combine aumenta la probabilidad de ser elegido, pero no garantiza una buena carrera?
+- ¿Cómo es posible que nadie eligiera a Tom Brady hasta la selección 199? ¿Lo habría visto venir algún modelo?
+- ¿Sirve de algo un pronóstico que se equivoca, en promedio, por más de 12 puntos? Spoiler: depende de para qué lo uses.
 
-Tres cosas que vas a poder explicar al final del curso:
-
-- **¿Por qué los pronósticos de la izquierda se amontonan en una franja estrecha**, mientras que los de la derecha se abren mucho más? ¿Qué sabe el modelo de la derecha que el de la izquierda no sabe?
-- **¿Por qué Russell Wilson y Richard Sherman quedan tan por encima de la línea** en los dos paneles? Ningún equipo los vio venir: fueron elegidos en los puestos 75 y 154.
-- **¿Sirve de algo un pronóstico que se equivoca, en promedio, por más de 14 puntos?** Spoiler: depende de para qué lo uses.
-
-*El código de esta gráfica está en el `.Rmd`, en el bloque `vista-previa`. Hoy no hace falta entenderlo; en la sesión 5 lo escribirás tú.*
+*El código de las tres gráficas está en el `.Rmd`, en el bloque `historia`. Hoy no hace falta entenderlo.*
 
 ---
 
@@ -176,9 +421,9 @@ Los ejercicios de clase se corrigen en clase, en voz alta: no hay soluciones al 
 
 | Minutos | Qué hacemos |
 |---------|-------------|
-| 0–10 | La pregunta del curso; éxito, predictores y pronóstico |
-| 10–25 | Cargar los datos desde internet y mirarlos: objetos, funciones y tipos |
-| 25–50 | De 14,163 filas a una base de análisis: convertir, filtrar, seleccionar y crear variables |
+| 0–15 | De qué trata el curso: el fútbol americano, el draft y la pregunta; éxito, predictores y pronóstico |
+| 15–28 | Cargar los datos desde internet y mirarlos: objetos, funciones y tipos |
+| 28–50 | De 14,163 filas a una base de análisis: convertir, filtrar, seleccionar y crear variables |
 | 50–65 | Faltantes y comprobaciones: quién nunca jugó, nombres repetidos, valores raros |
 | 65–80 | Actividad central: la versión normal y la versión IA |
 | 80–90 | La receta completa; lo que sabemos y lo que no; GitHub |
@@ -203,7 +448,7 @@ Antes de tocar los datos, tres palabras que vamos a usar todo el curso, y que no
 
 La regla de oro: **un predictor solo vale si se conoce en el momento del pronóstico.** Los partidos que jugó un jugador en su carrera dicen mucho de su éxito, pero no sirven para pronosticarlo: el día del draft todavía no se han jugado.
 
-Un apunte sobre la medida de éxito que usaremos. El **Pro Bowl** es el partido de estrellas de la NFL: ir una vez ya es una distinción. **AV** (*Approximate Value*) es un número que el sitio Pro Football Reference calcula para cada jugador y temporada a partir de lo que hizo en el campo (titularidades, estadísticas, rendimiento de su unidad); `career_av` suma las temporadas de toda la carrera. Es aproximado, como dice su nombre, pero permite comparar jugadores de posiciones distintas en una sola escala. En la sesión 2 veremos sus ventajas y sus problemas.
+Las dos medidas de éxito son las de la introducción: el valor de carrera (`career_av`) y haber ido al Pro Bowl. El valor de carrera es aproximado, como dice su nombre (*Approximate Value*), pero permite comparar jugadores de posiciones distintas en una sola escala. En la sesión 2 veremos sus ventajas y sus problemas.
 
 ## Ejercicio 1. Definir y anticipar (sin computadora)
 
@@ -249,7 +494,7 @@ Dos detalles de esa dirección importan:
 - Es el archivo `nfl_data.csv` del repositorio [phcs971/nfl-draft-dataset](https://github.com/phcs971/nfl-draft-dataset) (licencia MIT), que une resultados del Combine, datos del draft y estadísticas de carrera tomadas de Pro Football Reference y Sports Reference.
 - Lleva un código largo (`54730ea...`): es el identificador de una **versión concreta** del archivo. Si el autor lo actualiza mañana, tu código seguirá leyendo exactamente los mismos datos. Eso es **reproducibilidad**: cualquiera que ejecute tu archivo obtiene tus mismas cifras.
 
-## Leer el archivo: por qué hacen falta dos opciones
+## Leer el archivo: por qué hacen falta tres opciones
 
 `read.csv()` lee archivos de texto con forma de tabla. Por defecto supone que las columnas están separadas por comas. Este archivo no:
 
@@ -259,19 +504,19 @@ prueba <- read.csv(url_datos)
 
 El error (`duplicate 'row.names' are not allowed`) no dice "te equivocaste de separador", pero eso es lo que pasa. El archivo separa las columnas con **punto y coma** (lo indica su documentación), y algunas celdas contienen comas dentro del texto, como `"Tom Brady, Michigan"`. R cuenta mal las columnas y termina confundido. Lección: un error de R a veces describe el síntoma, no la causa. Cuando un archivo no se lee, lo primero es mirar su documentación o sus primeras líneas.
 
-Leemos con dos opciones explícitas:
+Leemos con tres opciones explícitas:
 
 - `sep = ";"`: las columnas están separadas por punto y coma.
 - `na.strings = ""`: una celda vacía significa "dato faltante" (`NA`). Sin esta opción, R deja las celdas de texto vacías como texto vacío (`""`), que parece un valor pero no lo es.
 
-No hace falta indicar codificación (`encoding`): el archivo solo tiene caracteres básicos, sin acentos.
+- `encoding = "UTF-8"`: le dice a R cómo están escritos los caracteres especiales. El archivo casi no los tiene, pero hay algunos: en la columna `college_id`, cinco filas llevan un guion largo, como `Wisconsin–Stout`. Sin esta opción, en algunas computadoras ese guion se vería como símbolos raros.
 
 ```{r}
 ruta_respaldo <- "datos/nfl_data.csv"   # copia local, por si no hay internet
 
 nfl <- tryCatch(
-  read.csv(url_datos, sep = ";", na.strings = ""),
-  error = function(e) read.csv(ruta_respaldo, sep = ";", na.strings = "")
+  read.csv(url_datos, sep = ";", na.strings = "", encoding = "UTF-8"),
+  error = function(e) read.csv(ruta_respaldo, sep = ";", na.strings = "", encoding = "UTF-8")
 )
 ```
 
@@ -531,8 +776,12 @@ base <- nfl |>
   select(player_id, name, college, year, pos, simple_pos, draft_round, draft_pick, age,
          height, weight, hand_size, arm_length, forty, vert_leap, broad_jump,
          bench_press, shuttle, speed_score,
-         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo)
+         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo,
+         college_games, college_pass_yds, college_pass_td, college_rush_yds,
+         college_rec_yds, college_tackles, college_sacks, college_ints)
 ```
+
+Las últimas columnas (`college_...`) son estadísticas de la etapa universitaria (NCAA): partidos jugados, yardas por pase, por tierra y por recepción, pases de anotación, tacleadas, capturas e intercepciones. Las usaremos desde la sesión 2.
 
 Dos piezas nuevas: `!` niega una condición (`!(tag %in% tags_repetidos)` es "el tag **no** está en la lista") e `ifelse(condición, sí, no)` elige un valor u otro fila por fila.
 
