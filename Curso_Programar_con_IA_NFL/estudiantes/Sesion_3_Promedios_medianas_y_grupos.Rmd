@@ -84,16 +84,20 @@ Qué decidimos sobre los jugadores y por qué. Es la parte de la historia de la 
 | `group_by()` | Partir la tabla en grupos | `group_by(draft_round)` |
 | `summarise()` | Calcular algo una vez por grupo | `summarise(mediana = median(career_av))` |
 | `n()` | Contar cuántas filas hay en cada grupo | `summarise(jugadores = n())` |
+| `ggplot()` y `aes()` | Empezar una gráfica: la tabla y qué columna va en cada eje | `ggplot(base, aes(x = draft_pick, y = career_av))` |
+| `geom_point()` y `geom_line()` | Capas de puntos y de líneas | `+ geom_point()` |
+| `labs()` | Títulos de la gráfica y de los ejes | `labs(x = "Número de selección")` |
 
 **Plan de la hora:**
 
 | Minutos | Qué hacemos |
 |---------|-------------|
 | 0–5 | La receta de la sesión 2 |
-| 5–15 | La respuesta: promedio y mediana |
-| 15–30 | La forma del éxito: histograma, cuantiles y los mejores |
-| 30–42 | ¿Importa la ronda? `group_by()` y `summarise()` |
-| 42–55 | ¿Importa la posición? |
+| 5–12 | La respuesta: promedio y mediana |
+| 12–22 | La forma del éxito: histograma, cuantiles y los mejores |
+| 22–32 | ¿Importa la ronda? `group_by()` y `summarise()` |
+| 32–40 | ¿Importa la posición? |
+| 40–55 | La gráfica de la sesión 1, paso a paso |
 | 55–60 | Lo que aprendimos y cómo es la Tarea 3 |
 
 ---
@@ -310,6 +314,98 @@ Mira la fila de los mariscales (`QB`) y compárala con las demás. Según mires 
 
 ---
 
+# 6. La gráfica de la sesión 1, paso a paso
+
+En la sesión 1 vimos una gráfica sin su código: cada punto era un jugador elegido, con su número de selección y su valor de carrera, y una línea naranja marcaba el promedio. Ya tienes todo lo necesario para hacerla tú.
+
+Usamos nuestra base (elegidos de 2000 a 2014). La de la sesión 1 empezaba en 1987: por eso aquí hay menos puntos y no aparece Peyton Manning, que fue elegido en 1998.
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+Las gráficas se hacen con el paquete **ggplot2**, que instalaste en la sesión 1. Una gráfica de ggplot2 se arma **por capas**:
+
+- `ggplot(tabla, aes(x = ..., y = ...))` dice qué tabla usar y qué columna va en cada eje. `aes()` viene de *aesthetics* (estética): qué columna se ve dónde.
+- `geom_point()` agrega una capa de puntos; `geom_line()`, una de líneas.
+- Las capas se suman con `+`, **no** con `%>%`. Es el error más común.
+:::
+
+## Paso 1: los puntos
+
+```{r}
+library(ggplot2)   # cargamos el paquete de gráficas
+
+ggplot(base, aes(x = draft_pick, y = career_av)) +   # la tabla y qué va en cada eje
+  geom_point()                                       # y encima, una capa de puntos
+```
+
+Cada punto es un jugador. Son tantos que se tapan unos a otros: no se ve dónde se concentran ni hacia dónde va el valor de carrera.
+
+## Paso 2: la tabla del promedio
+
+Para dibujar la línea necesitamos otra tabla con el promedio. Si calculáramos un promedio por cada número de selección, cada uno saldría de 15 jugadores como mucho (uno por año) y la línea saltaría mucho. Por eso juntamos las selecciones de 8 en 8 y calculamos el promedio de cada bloque. Es `group_by()` + `summarise()`, lo mismo de la sección 4.
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`ceiling()` redondea hacia arriba. `ceiling(draft_pick / 8)` da 1 para las selecciones 1 a 8, 2 para las 9 a 16, 3 para las 17 a 24, y así.
+:::
+
+```{r}
+promedios <- base %>%
+  mutate(bloque = ceiling(draft_pick / 8)) %>%   # bloques de 8: 1-8, 9-16, 17-24...
+  group_by(bloque) %>%                           # y luego un grupo por bloque
+  summarise(draft_pick = mean(draft_pick),       # selección promedio del bloque
+            career_av  = mean(career_av),        # valor de carrera promedio
+            jugadores  = n()) %>%                # jugadores en el bloque
+  filter(jugadores >= 10)                        # el último bloque tiene solo 6: fuera
+
+head(promedios)    # las primeras filas de la tabla nueva
+```
+
+A las columnas les pusimos a propósito los mismos nombres que tienen en `base` (`draft_pick` y `career_av`): así la línea puede usar los mismos ejes que los puntos.
+
+## Paso 3: la gráfica completa
+
+Sobre los puntos del paso 1 agregamos la línea, marcamos a Tom Brady y ponemos títulos:
+
+```{r, fig.height = 4.5}
+brady <- base %>% filter(name == "Tom Brady")   # una tabla con una sola fila: Tom Brady
+
+ggplot(base, aes(x = draft_pick, y = career_av)) +   # la tabla y los ejes, como antes
+  # Capa 1: los puntos, azules y transparentes
+  geom_point(color = "#2a78d6", alpha = 0.25) +
+  # Capa 2: la línea del promedio, con la tabla promedios
+  geom_line(data = promedios, color = "#eb6834", linewidth = 1.2) +
+  # Capa 3: Tom Brady, con un punto más grande y su nombre a la derecha
+  geom_point(data = brady, size = 3) +
+  geom_text(data = brady, aes(label = name), hjust = -0.15) +
+  # Títulos de la gráfica y de los ejes
+  labs(title = "Las primeras selecciones tienen mejores carreras en promedio",
+       subtitle = "Elegidos de 2000 a 2014; la línea es el promedio cada 8 selecciones",
+       x = "Número de selección en el draft",
+       y = "Valor de carrera (career_av)") +
+  # Un estilo con fondo limpio
+  theme_minimal()
+```
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+
+- `color = "#2a78d6"`: un color fijo, escrito como código de color (azul). Va **fuera** de `aes()` porque no depende de ninguna columna.
+- `alpha = 0.25`: transparencia, de 0 (invisible) a 1 (sólido). Donde se juntan muchos puntos, el color se ve más oscuro.
+- `data = promedios`: esa capa usa **otra tabla**. Los ejes `x` e `y` los toma de lo que dijimos en `ggplot()`: por eso las columnas tienen que llamarse igual.
+- `aes(label = name)`: el texto de la etiqueta sale de la columna `name`. Va **dentro** de `aes()` porque sí depende de una columna.
+- `labs()` pone los títulos y `theme_minimal()` cambia el estilo del fondo.
+:::
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+La línea cae con fuerza en las primeras selecciones y después baja cada vez más despacio: elegir entre los primeros importa mucho. Pero alrededor de la línea hay de todo, y el punto más alto del archivo está en la selección 199.
+
+Recuerda lo de hoy: la línea es un **promedio**, y a los promedios los jalan las estrellas. Pruébalo: en el paso 2 cambia `mean(career_av)` por `median(career_av)`, ejecuta de nuevo el paso 3 y mira qué le pasa a la línea.
+:::
+
+---
+
 # Lo que aprendimos hoy
 
 | De R | De los datos |
@@ -319,6 +415,7 @@ Mira la fila de los mariscales (`QB`) y compárala con las demás. Según mires 
 | `quantile()` para ubicar a los de arriba | El 10% de arriba se lleva el 40% del valor |
 | `arrange()` y `desc()` para ordenar | Ocho de los diez mejores son mariscales |
 | `group_by()` + `summarise()` + `n()` para comparar grupos | La mediana cae de 40 en la primera ronda a 1 en la séptima |
+| `ggplot()` + capas (`geom_point()`, `geom_line()`, `labs()`) para graficar | El promedio cae con el número de selección, pero alrededor de la línea hay de todo |
 
 ---
 
@@ -356,13 +453,13 @@ Una decisión bien fundamentada tiene cuatro partes:
 - *Límite:* si al director le interesa el valor **total** que produce un draft, y no el del jugador típico, el promedio sí sirve.
 :::
 
-## Paso 1. Anticipa (1 minuto)
+## Paso 1. Anticipa
 
 Antes de calcular nada: ¿crees que el analista tiene razón? Escribe una frase.
 
 *Mi respuesta:*
 
-## Paso 2. Comprueba lo que dice el analista (3 minutos)
+## Paso 2. Comprueba lo que dice el analista
 
 Quita los signos de gato (`#`) y ejecuta (atajo: selecciona las líneas y pulsa `Ctrl + Shift + C`; en Mac, `Cmd + Shift + C`). ¿Es cierto que los mariscales tienen el promedio más alto?
 
@@ -373,7 +470,7 @@ Quita los signos de gato (`#`) y ejecuta (atajo: selecciona las líneas y pulsa 
 #   arrange(desc(promedio))
 ```
 
-## Paso 3. Busca más evidencia (8 minutos)
+## Paso 3. Busca más evidencia
 
 Primero, guarda solo a los mariscales en un objeto (quita los `#`):
 
@@ -403,7 +500,7 @@ Primero, guarda solo a los mariscales en un objeto (quita los `#`):
 # median(qb_resto$career_av)
 ```
 
-## Paso 4. Decide y fundamenta (8 minutos)
+## Paso 4. Decide y fundamenta
 
 Responde al analista con las cuatro partes. Usa **tus** números de los pasos 2 y 3.
 
