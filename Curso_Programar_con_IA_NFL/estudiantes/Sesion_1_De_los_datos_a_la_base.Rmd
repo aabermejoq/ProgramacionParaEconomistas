@@ -394,7 +394,7 @@ Este archivo es un R Markdown: mezcla texto y bloques de código (*chunks*). Pue
 - Para ejecutar un bloque completo: clic en el triángulo verde de su esquina superior derecha.
 - Para generar el documento HTML completo: botón **Knit**.
 
-**Instala los paquetes del curso, una sola vez.** Un *paquete* es un conjunto de funciones que alguien escribió y publicó para que no tengas que programarlas tú. En todo el curso usaremos solo tres: `dplyr` (manipular tablas), `ggplot2` (gráficas, desde la sesión 3) y `glmnet` (un modelo de la sesión 4). Escribe esto **en la consola**, no en el documento, y presiona Enter:
+**Instala los paquetes del curso, una sola vez.** Un *paquete* es un conjunto de funciones que alguien escribió y publicó para que no tengas que programarlas tú. En todo el curso usaremos solo tres: `dplyr` (manipular tablas), `ggplot2` (gráficas) y `glmnet` (un modelo de la sesión 4). Escribe esto **en la consola**, no en el documento, y presiona Enter:
 
 ```r
 install.packages(c("dplyr", "ggplot2", "glmnet", "rmarkdown"))

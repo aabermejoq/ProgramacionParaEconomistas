@@ -1,0 +1,422 @@
+---
+title: "Sesión 3. ¿Cuánto vale un jugador elegido?"
+subtitle: "Promedios, medianas y comparación de grupos con dplyr"
+author: "Programar con criterio en la era de la IA · Proyecto: pronosticar el éxito en la NFL"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    theme: flatly
+    highlight: tango
+---
+
+```{r formato, include=FALSE}
+# ==========================================================================
+# BLOQUE DE FORMATO
+# Solo sirve para que el documento HTML se vea bien. NO es parte de lo que
+# aprendemos en clase: no hace falta entenderlo ni modificarlo.
+# ==========================================================================
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, comment = "##",
+                      fig.width = 7, fig.height = 4, fig.align = "center")
+options(width = 100)   # que las tablas no se corten en el HTML
+
+# Compilar desde la carpeta de este archivo (así funcionan las rutas como "datos/...")
+if (!is.null(knitr::current_input())) {
+  knitr::opts_knit$set(root.dir = dirname(knitr::current_input(dir = TRUE)))
+}
+```
+
+```{css, echo=FALSE}
+/* BLOQUE DE FORMATO: colores de los recuadros del HTML. No es parte de la clase. */
+.aprende { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
+.datos { border-left: 4px solid #1baf7a; background: #f1faf6; padding: 0.6em 1em; margin: 1em 0; }
+.tarea { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
+.aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
+.fundamentar { border: 2px solid #104281; border-radius: 6px; padding: 0.6em 1em; margin: 1em 0; }
+.mensaje { font-size: 1.2em; color: #104281; border-left: 5px solid #104281; padding: 0.3em 1em; margin: 1.2em 0; }
+.etiqueta { display: block; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b6a65; margin-bottom: 0.3em; }
+```
+
+# Antes de empezar: dos tipos de código
+
+::: {.aviso}
+Igual que en la sesión 2: al principio del archivo hay dos bloques marcados como **BLOQUE DE FORMATO**. Solo sirven para que el documento HTML se vea bien. **No son parte de la clase**: no hace falta entenderlos ni cambiarlos, y en el HTML no aparecen.
+
+**Todo el código que ves en el HTML es el código que estamos aprendiendo.** Cada línea lleva un comentario (lo que va después de `#`) que dice qué hace.
+:::
+
+Los recuadros son los mismos de la sesión 2:
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+Qué hace una función nueva y cómo se escribe.
+:::
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+Qué decidimos sobre los jugadores y por qué. Es la parte de la historia de la NFL.
+:::
+
+---
+
+# Hoy
+
+**Dónde nos quedamos.** En la sesión 2 construimos la base de análisis paso a paso: 3,197 jugadores elegidos entre 2000 y 2014, sin pateadores ni nombres repetidos, y con valor de carrera 0 para los que nunca jugaron. Y dejamos una pregunta sin responder.
+
+**La pregunta de hoy:**
+
+::: {.mensaje}
+¿Cuánto valor de carrera acumula, en promedio, un jugador elegido? ¿Depende de cuándo y en qué posición fue elegido?
+:::
+
+**Lo que aprendes hoy de R:**
+
+| Función | Para qué sirve | Ejemplo |
+|---------|----------------|---------|
+| `mean()` | El promedio | `mean(base$career_av)` |
+| `median()` | La mediana: el valor del jugador de en medio | `median(base$career_av)` |
+| `summary()` | Mínimo, cuartiles, mediana, promedio y máximo de una vez | `summary(base$career_av)` |
+| `hist()` | Un histograma: cuántos jugadores hay en cada tramo de valores | `hist(base$career_av)` |
+| `quantile()` | Por debajo de qué valor queda un porcentaje de los jugadores | `quantile(base$career_av, 0.90)` |
+| `arrange()` y `desc()` | Ordenar las filas; `desc()` ordena de mayor a menor | `arrange(desc(career_av))` |
+| `group_by()` | Partir la tabla en grupos | `group_by(draft_round)` |
+| `summarise()` | Calcular algo una vez por grupo | `summarise(mediana = median(career_av))` |
+| `n()` | Contar cuántas filas hay en cada grupo | `summarise(jugadores = n())` |
+
+**Plan de la hora:**
+
+| Minutos | Qué hacemos |
+|---------|-------------|
+| 0–5 | La receta de la sesión 2 |
+| 5–15 | La respuesta: promedio y mediana |
+| 15–30 | La forma del éxito: histograma, cuantiles y los mejores |
+| 30–42 | ¿Importa la ronda? `group_by()` y `summarise()` |
+| 42–55 | ¿Importa la posición? |
+| 55–60 | Lo que aprendimos y cómo es la Tarea 3 |
+
+---
+
+# 1. La receta
+
+Es la receta de la sesión 2. Ya la conoces: aquí solo la ejecutamos para tener la base lista. Recuerda que el archivo `nfl_data.csv` tiene que estar en la misma carpeta que este documento o dentro de una carpeta llamada `datos`.
+
+```{r}
+# Cargamos el paquete dplyr (filter, mutate, select, group_by... y el símbolo %>%)
+library(dplyr)
+
+# Buscamos el archivo: primero en la misma carpeta y, si no está, en la carpeta "datos"
+if (file.exists("nfl_data.csv")) {
+  ruta_datos <- "nfl_data.csv"
+} else {
+  ruta_datos <- "datos/nfl_data.csv"
+}
+
+# Leemos el archivo: separado por ";", celdas vacías = NA, caracteres especiales en UTF-8
+nfl <- read.csv(ruta_datos, sep = ";", na.strings = "", encoding = "UTF-8")
+
+# ---------------------------------------------------------------
+# RECETA: de la base cruda (nfl) a la base de análisis (base)
+# ---------------------------------------------------------------
+tags_repetidos <- nfl$tag[duplicated(nfl$tag)]       # nombre + universidad repetidos
+
+base <- nfl %>%
+  rename(forty = X40_yard) %>%                       # nombre más cómodo
+  mutate(drafted = as.logical(drafted)) %>%          # "True"/"False" -> TRUE/FALSE
+  filter(drafted,                                    # solo elegidos: los únicos con carrera
+         year >= 2000, year <= 2014,                 # carreras de al menos diez temporadas
+         simple_pos != "ST",                         # sin pateadores ni despejadores
+         !(tag %in% tags_repetidos)) %>%             # sin filas con la carrera de otra persona
+  mutate(nunca_jugo  = is.na(career_av),             # elegido, pero nunca jugó
+         career_av   = ifelse(nunca_jugo, 0, career_av),
+         g           = ifelse(nunca_jugo, 0, g),
+         pro_bowl    = pro_bowls >= 1,               # fue al menos una vez al Pro Bowl
+         speed_score = weight * 200 / forty^4) %>%   # velocidad ajustada por peso
+  select(player_id, name, college, year, pos, simple_pos, draft_round, draft_pick, age,
+         height, weight, hand_size, arm_length, forty, vert_leap, broad_jump,
+         bench_press, shuttle, speed_score,
+         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo,
+         college_games, college_pass_yds, college_pass_td, college_rush_yds,
+         college_rec_yds, college_tackles, college_sacks, college_ints)
+
+# Comprobación: deben ser 3,197 jugadores
+nrow(base)
+```
+
+---
+
+# 2. La respuesta: promedio y mediana
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`mean()` suma todos los valores y divide entre cuántos son. `median()` ordena a los jugadores de menor a mayor y toma el valor del que queda **en medio**. `summary()` da las dos y algunas cifras más, de una vez.
+:::
+
+```{r}
+# El promedio: la suma de todos los valores de carrera dividida entre el número de jugadores
+mean(base$career_av)
+
+# La mediana: si ordenamos a los 3,197 jugadores, el valor del que queda en medio
+median(base$career_av)
+```
+
+El promedio es 18 y la mediana, 8. Son muy distintos. `summary()` ayuda a entender por qué:
+
+```{r}
+# Seis cifras de una vez: mínimo, primer cuartil, mediana, promedio, tercer cuartil y máximo
+summary(base$career_av)
+```
+
+Cómo se lee:
+
+- **Min.** y **Max.**: el valor más bajo (−4, Ryan Lindley, sesión 1) y el más alto (184, Tom Brady).
+- **1st Qu.** (primer cuartil): una cuarta parte de los jugadores acumuló 1 punto o menos.
+- **Median**: la mitad acumuló 8 o menos.
+- **3rd Qu.** (tercer cuartil): tres cuartas partes acumularon 28 o menos.
+- **Mean**: el promedio, 18. Está mucho más cerca del tercer cuartil que de la mediana.
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+¿Qué cifra le damos al director general? Unos pocos jugadores acumulan muchísimo y **jalan el promedio hacia arriba**: por eso el promedio (18) queda tan lejos de la mediana (8). Si la pregunta es "¿qué carrera tiene un jugador **típico**?", la respuesta honesta es la mediana: la mitad de los elegidos acumuló 8 puntos o menos.
+:::
+
+---
+
+# 3. La forma del éxito
+
+## Un histograma
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`hist()` dibuja un **histograma**: parte los valores en tramos y dibuja una barra por tramo; la altura es cuántos jugadores caen en él. Es una función de R que no necesita paquetes. Dentro de los paréntesis se le pueden dar opciones separadas por comas.
+:::
+
+```{r}
+hist(base$career_av,                                 # la columna que queremos ver
+     breaks = 40,                                    # en cuántos tramos partimos los valores
+     main   = "Valor de carrera de los elegidos",    # título
+     xlab   = "Valor de carrera (career_av)",        # nombre del eje horizontal
+     ylab   = "Jugadores")                           # nombre del eje vertical
+```
+
+Una barra enorme cerca de 0 y una cola larga hacia la derecha. Así se ve una distribución **asimétrica**: muchos jugadores acumulan poco y unos pocos acumulan muchísimo.
+
+¿Cuántos se quedaron exactamente en 0?
+
+```{r}
+# base$career_av == 0 da TRUE para cada jugador con valor 0; sum() cuenta los TRUE
+sum(base$career_av == 0)
+
+# Y como proporción: el promedio de TRUE/FALSE es la proporción de TRUE (sesión 2)
+mean(base$career_av == 0)
+```
+
+Uno de cada cinco elegidos acumuló **cero**.
+
+## Cuantiles: ¿dónde está el 10% de arriba?
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`quantile(x, 0.90)` da el valor que deja **por debajo** al 90% de los jugadores. La mediana es lo mismo que `quantile(x, 0.50)`.
+:::
+
+```{r}
+# ¿Por debajo de qué valor queda el 90% de los jugadores?
+quantile(base$career_av, 0.90)
+```
+
+El 90% acumuló 51 puntos o menos. ¿Cuánto del valor total se llevan los que están por encima?
+
+```{r}
+umbral  <- quantile(base$career_av, 0.90)             # el valor que separa al 10% de arriba
+mejores <- base %>% filter(career_av >= umbral)       # toma base y quédate con el 10% de arriba
+
+nrow(mejores)                                         # cuántos son
+sum(mejores$career_av) / sum(base$career_av)          # qué parte del valor total acumulan
+```
+
+El 10% de los jugadores se lleva el **40%** de todo el valor de carrera.
+
+## Los mejores
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`arrange()` ordena las filas según una columna, de menor a mayor. `arrange(desc(columna))` las ordena de **mayor a menor**. `head(10)` muestra las primeras diez.
+:::
+
+```{r}
+base %>%
+  arrange(desc(career_av)) %>%                       # y luego ordena de mayor a menor valor
+  select(name, year, pos, draft_pick, career_av) %>%  # y luego muestra solo estas columnas
+  head(10)                                           # y luego solo las primeras diez filas
+```
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+De los diez jugadores con más valor de carrera, **ocho son mariscales de campo** (QB). Es una primera pista de que el valor de carrera no trata igual a todas las posiciones: un buen mariscal juega muchos años y participa en todas las jugadas de ataque. Lo veremos en la sección 5.
+:::
+
+---
+
+# 4. ¿Importa la ronda?
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`group_by()` parte la tabla en **grupos**: uno por cada valor de la columna que le demos. `summarise()` calcula lo que le pidamos **una vez por grupo** y devuelve una tabla con una fila por grupo. Dentro de `summarise()`, `n()` cuenta cuántos jugadores hay en cada grupo.
+
+Se lee así: "toma `base`, y luego agrúpala por ronda, y luego, para cada ronda, calcula…".
+:::
+
+```{r}
+base %>%
+  group_by(draft_round) %>%                  # y luego un grupo por cada ronda (1 a 7)
+  summarise(jugadores     = n(),             # cuántos jugadores hay en la ronda
+            promedio      = mean(career_av), # su valor de carrera promedio
+            mediana       = median(career_av),   # su mediana
+            nunca_jugaron = mean(nunca_jugo))    # proporción que nunca jugó
+```
+
+Cada nombre a la izquierda del `=` (`jugadores`, `promedio`...) es el nombre que tendrá la columna en el resultado: lo eliges tú.
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+Los equipos no eligen a ciegas. La mediana cae de **40** en la primera ronda a **1** en la séptima, y casi uno de cada cuatro elegidos en la séptima ronda nunca jugó. El orden del draft dice mucho del futuro de un jugador.
+
+Pero dice mucho **en promedio**: en cada ronda hay de todo. Tom Brady fue elegido en la sexta ronda.
+:::
+
+---
+
+# 5. ¿Importa la posición?
+
+El mismo código, agrupando por posición. Al final añadimos `arrange()` para ordenar la tabla de mayor a menor mediana:
+
+```{r}
+base %>%
+  group_by(simple_pos) %>%                   # y luego un grupo por cada posición
+  summarise(jugadores = n(),                 # cuántos jugadores hay
+            promedio  = mean(career_av),     # su promedio
+            mediana   = median(career_av)) %>%   # su mediana
+  arrange(desc(mediana))                     # y luego ordena de mayor a menor mediana
+```
+
+Mira la fila de los mariscales (`QB`) y compárala con las demás. Según mires el promedio o la mediana, los mariscales están entre los mejores o entre los peores.
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+¿Cuál de las dos medidas hay que mirar para comparar posiciones? No hay una respuesta automática: depende de la pregunta que quieras responder. **Esa decisión es la Tarea 3.**
+:::
+
+---
+
+# Lo que aprendimos hoy
+
+| De R | De los datos |
+|------|--------------|
+| `mean()`, `median()` y `summary()` para resumir una columna | El promedio (18) y la mediana (8) cuentan historias distintas |
+| `hist()` para ver la forma de una columna | El éxito es muy desigual: uno de cada cinco se queda en 0 |
+| `quantile()` para ubicar a los de arriba | El 10% de arriba se lleva el 40% del valor |
+| `arrange()` y `desc()` para ordenar | Ocho de los diez mejores son mariscales |
+| `group_by()` + `summarise()` + `n()` para comparar grupos | La mediana cae de 40 en la primera ronda a 1 en la séptima |
+
+---
+
+# Tarea 3 (después de clase): ¿elegimos mariscales?
+
+::: {.tarea}
+**Tiempo estimado:** 20 minutos.
+
+**Qué entregas:** tu archivo `sesion3_trabajo.Rmd` (una copia de este documento con tus respuestas) en la carpeta `sesion-3/` de tu repositorio de GitHub.
+
+**Qué se valora:** que tomes una **decisión** y la **fundamentes** con tus propios números. No hay una respuesta única correcta: hay decisiones bien fundamentadas y decisiones mal fundamentadas.
+:::
+
+El analista jefe del equipo te escribe:
+
+> "Revisé el valor de carrera por posición: los mariscales tienen el **promedio más alto** de todos. Propongo que el equipo use sus primeras selecciones del próximo draft en mariscales."
+
+Tu trabajo es decidir si le haces caso y explicar por qué.
+
+## Cómo se fundamenta una decisión
+
+::: {.fundamentar}
+Una decisión bien fundamentada tiene cuatro partes:
+
+1. **Decisión:** qué harías, en una frase.
+2. **Evidencia:** los números que la respaldan, calculados por ti.
+3. **Razonamiento:** por qué esos números llevan a esa decisión.
+4. **Límite:** qué no sabes, o qué tendría que pasar para que cambiaras de opinión.
+
+**Un ejemplo con lo de hoy** (no es la respuesta de la tarea):
+
+- *Decisión:* para describir al jugador típico, le daría al director la mediana, no el promedio.
+- *Evidencia:* la mediana es 8 y el promedio, 18; uno de cada cinco elegidos acumuló 0 y el 10% de arriba se lleva el 40% del valor.
+- *Razonamiento:* unos pocos jugadores con valores enormes suben el promedio; la mediana no se mueve con ellos, así que describe mejor lo que le pasa a la mayoría.
+- *Límite:* si al director le interesa el valor **total** que produce un draft, y no el del jugador típico, el promedio sí sirve.
+:::
+
+## Paso 1. Anticipa (1 minuto)
+
+Antes de calcular nada: ¿crees que el analista tiene razón? Escribe una frase.
+
+*Mi respuesta:*
+
+## Paso 2. Comprueba lo que dice el analista (3 minutos)
+
+Quita los signos de gato (`#`) y ejecuta (atajo: selecciona las líneas y pulsa `Ctrl + Shift + C`; en Mac, `Cmd + Shift + C`). ¿Es cierto que los mariscales tienen el promedio más alto?
+
+```{r}
+# base %>%
+#   group_by(simple_pos) %>%
+#   summarise(promedio = mean(career_av)) %>%
+#   arrange(desc(promedio))
+```
+
+## Paso 3. Busca más evidencia (8 minutos)
+
+Primero, guarda solo a los mariscales en un objeto (quita los `#`):
+
+```{r}
+# qb <- base %>% filter(simple_pos == "QB")
+# nrow(qb)
+```
+
+**a) ¿Qué pasa con la mediana?** Compara la mediana de los mariscales con la de las demás posiciones. Pista: el código de la sección 5.
+
+```{r}
+# aquí va tu código
+```
+
+**b) ¿Cuántos mariscales se quedaron en 0?** Pista: `sum(qb$career_av == 0)`.
+
+```{r}
+# aquí va tu código
+```
+
+**c) ¿Importa en qué ronda se elige al mariscal?** Separa a los mariscales elegidos en la primera ronda de los demás y compara sus medianas. Completa los `___` y quita los `#`:
+
+```{r}
+# qb_primera <- qb %>% filter(draft_round == ___)
+# qb_resto   <- qb %>% filter(draft_round > ___)
+# median(qb_primera$career_av)
+# median(qb_resto$career_av)
+```
+
+## Paso 4. Decide y fundamenta (8 minutos)
+
+Responde al analista con las cuatro partes. Usa **tus** números de los pasos 2 y 3.
+
+- **Decisión:**
+- **Evidencia:**
+- **Razonamiento:**
+- **Límite:**
+
+**Para entregar:** en RStudio, botón **Knit** para comprobar que todo se ejecuta. Después, en GitHub, entra a tu repositorio, abre la carpeta `sesion-3`, **Add file > Upload files**, sube `sesion3_trabajo.Rmd` y escribe un mensaje como *Agregar trabajo de la sesión 3*.
+
+| Criterio | Qué se revisa |
+|----------|---------------|
+| Evidencia calculada | Los pasos 2 y 3 están completos y se ejecutan |
+| Decisión | Es clara y responde a la propuesta del analista |
+| Fundamento | La evidencia son números tuyos y el razonamiento explica por qué llevan a tu decisión |
+| Límite | Reconoces qué no sabes o qué te haría cambiar de opinión |
